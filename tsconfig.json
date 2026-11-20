@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
     "target": "es2022",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "rootDir": "src",
