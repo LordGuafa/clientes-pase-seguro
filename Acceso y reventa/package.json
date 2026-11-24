@@ -9,7 +9,7 @@
     "start": "node dist/main.js",
     "test": "vitest run",
     "lint": "eslint .",
-    "lint:openapi": "redocly lint openapi/acceso-reventa.yaml"
+    "lint:openapi": "redocly lint openapi/crud-accesos-reventas.yaml openapi/mid-acceso-reventa.yaml openapi/acceso-reventa.yaml"
   },
   "keywords": [],
   "author": "",

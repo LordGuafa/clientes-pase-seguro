@@ -11,11 +11,18 @@ async function main() {
   const app = componer(db, {
     qrSecret: env.QR_SECRET,
     gatewayUrl: env.GATEWAY_URL,
+    gatewaySecret: env.GATEWAY_SECRET,
     tokenPath: env.GATEWAY_TOKEN_PATH,
     clientId: env.CLIENT_ID,
     clientSecret: env.CLIENT_SECRET,
     timeoutMs: env.GATEWAY_TIMEOUT_MS,
     maxRetries: env.GATEWAY_MAX_RETRIES,
+    qrApiUrl: env.QR_API_URL,
+    qrApiKey: env.QR_API_KEY,
+    qrApiTimeoutMs: env.QR_API_TIMEOUT_MS,
+    qrApiMaxRetries: env.QR_API_MAX_RETRIES,
+    qrCacheTtlMs: env.QR_CACHE_TTL_MS,
+    qrCacheMaxItems: env.QR_CACHE_MAX_ITEMS,
   });
   const server = app.listen(env.PORT, () => {
     console.log(`Servicio escuchando en el puerto ${env.PORT}`);

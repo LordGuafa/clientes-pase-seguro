@@ -1,0 +1,39 @@
+openapi: 3.0.3
+info:
+  title: Servicio Acceso y Reventa (CRUD + MID) - Pase Seguro
+  version: 1.0.0
+  description: >
+    Contrato consolidado del despliegue Acceso y reventa del clúster Pase Seguro, integrando
+    las rutas CRUD (A-HU2: estado de acceso) y MID (validación de ingreso antifraude y emisión
+    de imagen QR con QuickChart API).
+  license:
+    name: ISC
+servers:
+  - url: https://gateway-pase-seguro.ejemplo.com
+    description: A través del API Gateway del clúster Pase Seguro
+  - url: http://localhost:3000
+    description: Entorno de desarrollo local
+tags:
+  - name: Sistema
+    description: Operaciones de verificación de salud
+  - name: Boletas - Estado de Acceso
+    description: Consulta de estado de acceso y transferencias (CRUD - A-HU2)
+  - name: Validación de Acceso
+    description: Validación antifraude en puerta con código QR firmado (MID)
+  - name: Emisión Visual QR (API de Tercero)
+    description: Generación de imagen QR mediante QuickChart API con plan de degradación (MID)
+paths:
+  /health:
+    $ref: './crud-accesos-reventas.yaml#/paths/~1health'
+  /health/ready:
+    $ref: './crud-accesos-reventas.yaml#/paths/~1health~1ready'
+  /boletas/{codigo}/estado-acceso:
+    $ref: './crud-accesos-reventas.yaml#/paths/~1boletas~1{codigo}~1estado-acceso'
+  /accesos/validar:
+    $ref: './mid-acceso-reventa.yaml#/paths/~1accesos~1validar'
+  /boletas/{codigo}/qr:
+    $ref: './mid-acceso-reventa.yaml#/paths/~1boletas~1{codigo}~1qr'
+components:
+  securitySchemes:
+    clientCredentials:
+      $ref: './mid-acceso-reventa.yaml#/components/securitySchemes/clientCredentials'
