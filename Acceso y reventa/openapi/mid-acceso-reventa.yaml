@@ -1,0 +1,298 @@
+openapi: 3.0.3
+info:
+  title: API MID Acceso y Reventa - Pase Seguro
+  version: 1.0.0
+  description: >
+    Contrato OpenAPI de la API MID del grupo Acceso y reventa. Aplica las reglas de negocio de
+    validación antifraude de ingreso con código QR firmado HMAC-SHA256 y generación visual del
+    código QR mediante el proveedor externo QuickChart (con caché TTL y plan de degradación).
+  license:
+    name: ISC
+servers:
+  - url: https://gateway-pase-seguro.ejemplo.com
+    description: A través del API Gateway del clúster Pase Seguro
+  - url: http://localhost:3000
+    description: Entorno de desarrollo local
+tags:
+  - name: Sistema
+    description: Operaciones públicas de monitoreo
+  - name: Validación de Acceso
+    description: Control antifraude de ingreso en puerta por código QR firmado
+  - name: Emisión Visual QR (API de Tercero)
+    description: Generación de imagen QR firmada consumiendo QuickChart API con plan de degradación
+paths:
+  /health:
+    get:
+      summary: Verifica que el servicio MID está activo
+      operationId: healthMid
+      tags: [Sistema]
+      security: []
+      responses:
+        '200':
+          description: Servicio operativo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /accesos/validar:
+    post:
+      summary: Valida el código QR de una boleta y registra el intento de ingreso
+      operationId: validarIngresoBoleta
+      tags: [Validación de Acceso]
+      security:
+        - clientCredentials: [boletas:leer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidarIngresoRequest'
+      responses:
+        '200':
+          description: Ingreso aceptado y registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidarIngresoResponse'
+        '400':
+          description: Cuerpo inválido o firma HMAC del código QR inválida (`qr_invalido`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          description: Sin permiso del gateway o boleta bloqueada por reventa sospechosa (`boleta_bloqueada`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: La boleta no existe en Eventos y boletas (`boleta_inexistente`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >
+            Conflicto de negocio (`boleta_no_vendida`, `boleta_otro_evento`,
+            `evento_no_disponible`, `fuera_de_fecha` o `boleta_ya_usada`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: >
+            Plan de degradación ante dependencia interna: Eventos y boletas o el Gateway no
+            respondieron tras los reintentos configurados (`servicio_no_disponible`). No se aprueba
+            el ingreso sin verificar autenticidad y vigencia del evento.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /boletas/{codigo}/qr:
+    get:
+      summary: Genera el código QR firmado y su imagen PNG consumiendo QuickChart API
+      description: >
+        Verifica en Eventos y boletas que la boleta exista y esté `vendida`, comprueba en el estado
+        de acceso local que no haya ingresado ni esté bloqueada, firma el código con HMAC-SHA256 y
+        solicita la imagen PNG al proveedor externo QuickChart (con caché en memoria y reintentos).
+        **Plan de degradación del tercero:** si QuickChart falla o excede el tiempo máximo, en modo
+        JSON responde `200` con `degradado: true`, `imagenBase64: null` y el `codigoQr` firmado
+        funcional; si el cliente exige binario directo (`formato=png`), responde `503`
+        (`proveedor_qr_no_disponible`).
+      operationId: generarQrBoleta
+      tags: [Emisión Visual QR (API de Tercero)]
+      security:
+        - clientCredentials: [boletas:leer, accesos:leer]
+      parameters:
+        - name: codigo
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: b7a1c2d3-1111-4222-8333-444455556666
+        - name: tamano
+          in: query
+          required: false
+          description: Tamaño en píxeles del lado de la imagen cuadrada (100 a 1000)
+          schema:
+            type: integer
+            minimum: 100
+            maximum: 1000
+            default: 300
+        - name: formato
+          in: query
+          required: false
+          description: "`json` devuelve metadatos + Base64 (soporta fallback degradado); `png` devuelve binario image/png"
+          schema:
+            type: string
+            enum: [json, png]
+            default: json
+      responses:
+        '200':
+          description: Código QR firmado generado (con imagen PNG o fallback degradado explícito)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QrBoletaResponse'
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Parámetros inválidos (`solicitud_invalida`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          description: Sin permiso o boleta bloqueada por reventa sospechosa (`boleta_bloqueada`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: La boleta no existe (`boleta_inexistente`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: La boleta no está vendida (`boleta_no_vendida`) o ya ingresó (`boleta_ya_usada`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: >
+            Dependencia no disponible: Eventos y boletas no responde (`servicio_no_disponible`) o
+            el proveedor externo QuickChart falló cuando se solicitó imagen binaria directa
+            (`proveedor_qr_no_disponible`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    clientCredentials:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://gateway-pase-seguro.ejemplo.com/token
+          scopes:
+            accesos:leer: Consultar estado de acceso de boletas
+            boletas:leer: Consultar boletas y eventos en Eventos y boletas
+            boletas:escribir: Actualizar propietario de boleta en transferencias
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+    ValidarIngresoRequest:
+      type: object
+      required: [codigoQr, puerta, eventoId]
+      properties:
+        codigoQr:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Cadena `uuid.firmaHmacSha256`
+          example: b7a1c2d3-1111-4222-8333-444455556666.9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+        puerta:
+          type: string
+          minLength: 1
+          maxLength: 20
+          example: Sala-3
+        eventoId:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: evt-1
+    ValidarIngresoResponse:
+      type: object
+      required: [resultado, accesoId, boletaCodigo, eventoId, puerta, registradoEn]
+      properties:
+        resultado:
+          type: string
+          enum: [aceptado]
+          example: aceptado
+        accesoId:
+          type: string
+          example: 2c5ea4c0-4067-11e9-8bad-9b1deb4d3b7d
+        boletaCodigo:
+          type: string
+          format: uuid
+          example: b7a1c2d3-1111-4222-8333-444455556666
+        eventoId:
+          type: string
+          example: evt-1
+        puerta:
+          type: string
+          example: Sala-3
+        registradoEn:
+          type: string
+          format: date-time
+          example: '2026-11-24T19:05:00Z'
+    QrBoletaResponse:
+      type: object
+      required: [boletaCodigo, codigoQr, formato, imagenBase64, dataUrl, origenCache, degradado]
+      properties:
+        boletaCodigo:
+          type: string
+          format: uuid
+          example: b7a1c2d3-1111-4222-8333-444455556666
+        codigoQr:
+          type: string
+          description: Contenido firmado `codigo.firma` apto para `POST /accesos/validar`
+          example: b7a1c2d3-1111-4222-8333-444455556666.9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+        formato:
+          type: string
+          enum: [image/png]
+          example: image/png
+        imagenBase64:
+          type: string
+          nullable: true
+          description: Imagen PNG codificada en Base64 (`null` cuando `degradado` es `true`)
+        dataUrl:
+          type: string
+          nullable: true
+          description: Data URL lista para incrustar (`null` cuando `degradado` es `true`)
+        origenCache:
+          type: boolean
+          example: false
+        degradado:
+          type: boolean
+          description: "`true` si QuickChart falló y se entregó únicamente el código firmado de respaldo"
+          example: false
+        motivoDegradacion:
+          type: string
+          example: proveedor_qr_no_disponible
+    Error:
+      type: object
+      required: [codigo, mensaje]
+      properties:
+        codigo:
+          type: string
+          example: boleta_ya_usada
+        mensaje:
+          type: string
+          example: La boleta ya fue usada
+        detalle:
+          type: object
+          additionalProperties: true
+  responses:
+    NoAutenticado:
+      description: Token ausente, inválido o vencido en el API Gateway
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

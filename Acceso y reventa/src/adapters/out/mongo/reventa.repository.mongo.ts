@@ -1,10 +1,10 @@
 import type { Collection, Db, Filter, ObjectId } from "mongodb";
-import type { ConsultaReventas, FiltrosReventa, ReventaRepository } from "../../../application/ports/out/reventas-repository.ts";
+import type { ConsultaReventas, FiltrosReventa, EstadoTransferenciasRepository } from "../../../application/ports/out/reventas-repository.ts";
 import type { Reventa } from "../../../domain/model/reventa.ts";
 
 type ReventaDoc = Omit<Reventa, "id"> & { id?: string; _id: string | ObjectId };
 
-export class ReventaRepositoryMongo implements ReventaRepository, ConsultaReventas {
+export class ReventaRepositoryMongo implements EstadoTransferenciasRepository, ConsultaReventas {
   private readonly col: Collection<ReventaDoc>;
 
   constructor(db: Db) {
@@ -24,5 +24,9 @@ export class ReventaRepositoryMongo implements ReventaRepository, ConsultaRevent
       .map(({ _id, id, vendedorId, compradorId, precio, estado, boletaCodigo, marcaSospechosa, registradaEn }) => ({
         id: id ?? _id.toString(), vendedorId, compradorId, precio, estado, boletaCodigo, marcaSospechosa, registradaEn,
       })).toArray();
+  }
+
+  async contarCompletadasPorBoleta(boletaCodigo: string): Promise<number> {
+    return this.col.countDocuments({ boletaCodigo, estado: "completada" });
   }
 }

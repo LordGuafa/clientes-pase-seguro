@@ -1,0 +1,213 @@
+openapi: 3.0.3
+info:
+  title: API CRUD Accesos y Reventas - Pase Seguro
+  version: 1.0.0
+  description: >
+    Contrato OpenAPI de la API CRUD del grupo Acceso y reventa (base de datos no relacional MongoDB).
+    Expone el estado de acceso acumulado de cada boleta (A-HU2) consumido por MID Compras y las
+    operaciones de persistencia sobre las colecciones `accesos` y `reventas`.
+  license:
+    name: ISC
+servers:
+  - url: https://gateway-pase-seguro.ejemplo.com
+    description: A través del API Gateway del clúster Pase Seguro
+  - url: http://localhost:3000
+    description: Entorno de desarrollo local
+tags:
+  - name: Sistema
+    description: Verificación de salud y disponibilidad del servicio
+  - name: Boletas - Estado de Acceso
+    description: Consulta de historial de ingreso, transferencias y bloqueo (A-HU2)
+paths:
+  /reventas:
+    get:
+      operationId: listarReventas
+      summary: Consultar el historial de reventas (A-HU3)
+      description: Los filtros se combinan por igualdad. Sin filtros se listan todas, de más reciente a más antigua. Se rechazan parámetros desconocidos o repetidos.
+      security:
+        - clientCredentials: []
+      parameters:
+        - { in: query, name: vendedorId, schema: { type: string, minLength: 1 } }
+        - { in: query, name: boletaCodigo, schema: { type: string, minLength: 1 } }
+        - { in: query, name: marcaSospechosa, description: Acepta únicamente true o false en minúsculas., schema: { type: boolean } }
+      responses:
+        '200':
+          description: Reventas coincidentes o un arreglo vacío.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Reventa' }
+              examples:
+                sinCoincidencias: { value: [] }
+        '400':
+          description: Filtros inválidos (solicitud_invalida).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+        '500':
+          description: Error interno al consultar el historial.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /health:
+    get:
+      summary: Verifica que el proceso del servicio está activo
+      operationId: healthCrud
+      tags: [Sistema]
+      security: []
+      responses:
+        '200':
+          description: El servicio está activo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /health/ready:
+    get:
+      summary: Verifica conectividad activa con MongoDB
+      operationId: healthReadyCrud
+      tags: [Sistema]
+      security: []
+      responses:
+        '200':
+          description: Servicio y MongoDB operativos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+        '503':
+          description: MongoDB no responde dentro del tiempo límite
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+  /boletas/{codigo}/estado-acceso:
+    get:
+      summary: Resumen del estado de acceso y transferencias de una boleta (A-HU2)
+      description: >
+        Indica si una boleta ya registró un ingreso aceptado, cuántas transferencias completadas
+        acumula y si está bloqueada por actividad sospechosa. Para una boleta sin historial en
+        MongoDB responde 200 con `ingreso: false`, `transferencias: 0` y `bloqueada: false`
+        (nunca 404, ya que la boleta puede existir en Eventos y boletas sin movimientos previos).
+      operationId: obtenerEstadoAccesoBoleta
+      tags: [Boletas - Estado de Acceso]
+      security:
+        - clientCredentials: [accesos:leer]
+      parameters:
+        - name: codigo
+          in: path
+          required: true
+          description: Identificador UUID único de la boleta
+          schema:
+            type: string
+            format: uuid
+            example: b7a1c2d3-1111-4222-8333-444455556666
+      responses:
+        '200':
+          description: Resumen actual del estado de acceso de la boleta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstadoAccesoBoleta'
+        '400':
+          description: El parámetro `codigo` no tiene formato UUID válido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+components:
+  securitySchemes:
+    clientCredentials:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://gateway-pase-seguro.ejemplo.com/token
+          scopes:
+            accesos:leer: Consultar el estado de acceso, transferencias y bloqueo de una boleta
+  schemas:
+    Reventa:
+      type: object
+      required: [id, boletaCodigo, vendedorId, compradorId, precio, estado, marcaSospechosa, registradaEn]
+      properties:
+        id: { type: string }
+        boletaCodigo: { type: string }
+        vendedorId: { type: string }
+        compradorId: { type: string }
+        precio: { type: number, description: Precio en COP }
+        estado: { type: string, enum: [pendiente, completada, cancelada, bloqueada] }
+        marcaSospechosa: { type: boolean }
+        registradaEn: { type: string, format: date-time }
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+    ReadinessStatus:
+      type: object
+      required: [status, mongo]
+      properties:
+        status:
+          type: string
+          enum: [ok, degradado]
+          example: ok
+        mongo:
+          type: string
+          enum: [ok, caído]
+          example: ok
+    EstadoAccesoBoleta:
+      type: object
+      required: [boletaCodigo, ingreso, transferencias, bloqueada]
+      properties:
+        boletaCodigo:
+          type: string
+          format: uuid
+          example: b7a1c2d3-1111-4222-8333-444455556666
+        ingreso:
+          type: boolean
+          description: "`true` si existe un acceso `aceptado` previo para esta boleta"
+          example: false
+        transferencias:
+          type: integer
+          minimum: 0
+          description: Cantidad acumulada de reventas con estado `completada`
+          example: 0
+        bloqueada:
+          type: boolean
+          description: "`true` si la boleta presenta alguna reventa con `marcaSospechosa: true`"
+          example: false
+    Error:
+      type: object
+      required: [codigo, mensaje]
+      properties:
+        codigo:
+          type: string
+          example: solicitud_invalida
+        mensaje:
+          type: string
+          example: El código de la boleta debe ser un UUID válido
+        detalle:
+          type: object
+          additionalProperties: true
+  responses:
+    NoAutenticado:
+      description: Token ausente, inválido o vencido en el API Gateway
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SinPermiso:
+      description: Sin alcance requerido o petición directa sin cabecera X-Gateway-Secret
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

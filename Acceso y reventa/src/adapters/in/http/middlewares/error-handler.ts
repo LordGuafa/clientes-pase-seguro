@@ -10,6 +10,7 @@ const STATUS: Record<string, number> = {
   boleta_ya_usada: 409,
   boleta_bloqueada: 403,
   servicio_no_disponible: 503,
+  proveedor_qr_no_disponible: 503,
 };
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof DomainError) {
@@ -19,10 +20,11 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
   if (err instanceof SyntaxError && "body" in err) {
-    console.error(err);
-    res
-      .status(500)
-      .json({ codigo: "error_interno", mensaje: "Error interno", detalle: {} });
+    res.status(400).json({
+      codigo: "solicitud_invalida",
+      mensaje: "El cuerpo de la petición no es un JSON válido",
+      detalle: {},
+    });
     return;
   }
   console.error(err);

@@ -4,10 +4,13 @@ import { AccesoRepositoryMongo } from "./adapters/out/mongo/acceso.repository.mo
 import { ReventaRepositoryMongo } from "./adapters/out/mongo/reventa.repository.mongo.ts";
 import { ValidarIngreso } from "./application/use-cases/validar-ingreso.ts";
 import { ListarReventas } from "./application/use-cases/listar-reventas.ts";
+import { ObtenerEstadoAcceso } from "./application/use-cases/obtener-estado-acceso.ts";
+import { GenerarQrBoleta } from "./application/use-cases/generar-qr-boleta.ts";
 import { QrVerifierHmac } from "./adapters/out/crypto/qr-verifier.hmac.ts";
 import { TokenProvider } from "./adapters/out/gateway-clients/token-provider.ts";
 import { GatewayHttpClient } from "./adapters/out/gateway-clients/http-client.ts";
 import { BoletasGatewayHttp } from "./adapters/out/gateway-clients/boletas.gateway.http.ts";
+import { QuickChartQrClient } from "./adapters/out/external-qr/quickchart-qr.client.ts";
 import { crearServidor } from "./adapters/in/http/server.ts";
 
 export function componer(
@@ -15,11 +18,18 @@ export function componer(
   cfg: {
     qrSecret: string;
     gatewayUrl: string;
+    gatewaySecret?: string;
     tokenPath: string;
     clientId: string;
     clientSecret: string;
     timeoutMs: number;
     maxRetries: number;
+    qrApiUrl?: string;
+    qrApiKey?: string;
+    qrApiTimeoutMs?: number;
+    qrApiMaxRetries?: number;
+    qrCacheTtlMs?: number;
+    qrCacheMaxItems?: number;
   },
 ) {
   const tokenProvider = new TokenProvider({
@@ -35,14 +45,47 @@ export function componer(
     timeoutMs: cfg.timeoutMs,
     maxRetries: cfg.maxRetries,
   });
+
+  const accesoRepo = new AccesoRepositoryMongo(db);
   const reventaRepo = new ReventaRepositoryMongo(db);
-  const validarIngreso = new ValidarIngreso({
-    accesoRepo: new AccesoRepositoryMongo(db),
+  const boletasGateway = new BoletasGatewayHttp(httpClient);
+  const qrCrypto = new QrVerifierHmac(cfg.qrSecret);
+  const qrImageGenerator = new QuickChartQrClient({
+    baseUrl: cfg.qrApiUrl ?? "https://quickchart.io/qr",
+    apiKey: cfg.qrApiKey,
+    timeoutMs: cfg.qrApiTimeoutMs ?? 3000,
+    maxRetries: cfg.qrApiMaxRetries ?? 2,
+    cacheTtlMs: cfg.qrCacheTtlMs ?? 300_000,
+    cacheMaxItems: cfg.qrCacheMaxItems ?? 500,
+  });
+
+  const obtenerEstadoAcceso = new ObtenerEstadoAcceso({
+    accesoRepo,
     reventaRepo,
-    boletasGateway: new BoletasGatewayHttp(httpClient),
-    qrVerifier: new QrVerifierHmac(cfg.qrSecret),
+  });
+
+  const generarQrBoleta = new GenerarQrBoleta({
+    boletasGateway,
+    obtenerEstadoAcceso,
+    qrSigner: qrCrypto,
+    qrImageGenerator,
+  });
+
+  const validarIngreso = new ValidarIngreso({
+    accesoRepo,
+    reventaRepo,
+    boletasGateway,
+    qrVerifier: qrCrypto,
     clock: { ahora: () => new Date() },
     generarId: randomUUID,
   });
-  return crearServidor({ db, validarIngreso, listarReventas: new ListarReventas(reventaRepo) });
+
+  return crearServidor({
+    listarReventas: new ListarReventas(reventaRepo),
+    db,
+    validarIngreso,
+    obtenerEstadoAcceso,
+    generarQrBoleta,
+    gatewaySecret: cfg.gatewaySecret,
+  });
 }
