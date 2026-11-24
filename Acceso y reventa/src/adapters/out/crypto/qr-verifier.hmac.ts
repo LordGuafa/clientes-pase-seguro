@@ -7,7 +7,7 @@ export class QrVerifierHmac implements QrVerifier {
   //!Confirmar si usamos hex o base64url
   verificar(codigo: string, firma: string): boolean {
     const esperada = Buffer.from(
-      createHmac("sha256", this.secret).update(codigo).digest("hex"),
+      createHmac("sha256", this.secret).update(codigo).digest("base64"),
     );
     const recibida = Buffer.from(firma);
     return (

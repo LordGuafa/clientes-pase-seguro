@@ -3,6 +3,7 @@ import { Db } from "mongodb";
 import { AccesoRepositoryMongo } from "./adapters/out/mongo/acceso.repository.mongo.ts";
 import { ReventaRepositoryMongo } from "./adapters/out/mongo/reventa.repository.mongo.ts";
 import { ValidarIngreso } from "./application/use-cases/validar-ingreso.ts";
+import { ListarReventas } from "./application/use-cases/listar-reventas.ts";
 import { QrVerifierHmac } from "./adapters/out/crypto/qr-verifier.hmac.ts";
 import { TokenProvider } from "./adapters/out/gateway-clients/token-provider.ts";
 import { GatewayHttpClient } from "./adapters/out/gateway-clients/http-client.ts";
@@ -34,13 +35,14 @@ export function componer(
     timeoutMs: cfg.timeoutMs,
     maxRetries: cfg.maxRetries,
   });
+  const reventaRepo = new ReventaRepositoryMongo(db);
   const validarIngreso = new ValidarIngreso({
     accesoRepo: new AccesoRepositoryMongo(db),
-    reventaRepo: new ReventaRepositoryMongo(db),
+    reventaRepo,
     boletasGateway: new BoletasGatewayHttp(httpClient),
     qrVerifier: new QrVerifierHmac(cfg.qrSecret),
     clock: { ahora: () => new Date() },
     generarId: randomUUID,
   });
-  return crearServidor({ db, validarIngreso });
+  return crearServidor({ db, validarIngreso, listarReventas: new ListarReventas(reventaRepo) });
 }

@@ -1,0 +1,85 @@
+openapi: 3.0.3
+info:
+  title: Acceso y reventa
+  version: 1.0.0
+  description: Consulta de reventas para auditoría.
+servers:
+  - url: /
+# Contrato de consumo a través del gateway del clúster.
+security:
+  - tokenGateway: []
+paths:
+  /reventas:
+    get:
+      operationId: listarReventas
+      summary: Consultar el historial de reventas
+      description: Los filtros se combinan por igualdad (AND). Sin filtros se listan todas, de más reciente a más antigua. Los parámetros desconocidos o repetidos se rechazan.
+      parameters:
+        - in: query
+          name: marcaSospechosa
+          description: Acepta únicamente true o false en minúsculas.
+          schema: { type: boolean }
+        - in: query
+          name: vendedorId
+          description: Identificador exacto del vendedor, sin espacios exteriores.
+          schema: { type: string, minLength: 1 }
+        - in: query
+          name: boletaCodigo
+          description: Código exacto de la boleta, sin espacios exteriores.
+          schema: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Reventas que coinciden. Sin coincidencias se devuelve un arreglo vacío.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Reventa' }
+              examples:
+                sinCoincidencias: { value: [] }
+                sospechosa:
+                  value:
+                    - id: rev-001
+                      boletaCodigo: c87979ee-e717-4631-94ca-e1007f728c77
+                      vendedorId: usr-3
+                      compradorId: usr-9
+                      precio: 90000
+                      estado: bloqueada
+                      marcaSospechosa: true
+                      registradaEn: '2026-11-20T10:00:00Z'
+        '400':
+          description: Filtros inválidos (solicitud_invalida).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Error interno al consultar el historial.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+components:
+  securitySchemes:
+    tokenGateway:
+      type: http
+      scheme: bearer
+      description: Token que valida el gateway antes de enrutar la consulta.
+  schemas:
+    Reventa:
+      type: object
+      required: [id, boletaCodigo, vendedorId, compradorId, precio, estado, marcaSospechosa, registradaEn]
+      properties:
+        id: { type: string }
+        boletaCodigo: { type: string }
+        vendedorId: { type: string }
+        compradorId: { type: string }
+        precio: { type: number, description: Precio en COP }
+        estado: { type: string }
+        marcaSospechosa: { type: boolean }
+        registradaEn: { type: string, format: date-time }
+    Error:
+      type: object
+      required: [codigo, mensaje, detalle]
+      properties:
+        codigo: { type: string }
+        mensaje: { type: string }
+        detalle: { type: object, additionalProperties: true }

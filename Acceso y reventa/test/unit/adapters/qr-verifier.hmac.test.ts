@@ -5,7 +5,7 @@ import { QrVerifierHmac } from "../../../src/adapters/out/crypto/qr-verifier.hma
 describe("QrVerifierHmac", () => {
   const secret = "super-secreto-de-prueba";
   const codigo = "b7a1c2d3-1111-4222-8333-444455556666";
-  const firma = createHmac("sha256", secret).update(codigo).digest("hex");
+  const firma = createHmac("sha256", secret).update(codigo).digest("base64");
   const verifier = new QrVerifierHmac(secret);
 
   it("firma correcta pasa", () => {
@@ -13,7 +13,7 @@ describe("QrVerifierHmac", () => {
   });
 
   it("alterar un carácter falla", () => {
-    const alterada = firma.slice(0, -1) + (firma.endsWith("0") ? "1" : "0");
+    const alterada = (firma.startsWith("A") ? "B" : "A") + firma.slice(1);
     expect(verifier.verificar(codigo, alterada)).toBe(false);
   });
 
