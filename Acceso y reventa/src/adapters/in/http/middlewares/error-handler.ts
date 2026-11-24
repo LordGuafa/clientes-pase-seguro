@@ -10,6 +10,8 @@ const STATUS: Record<string, number> = {
   boleta_ya_usada: 409,
   boleta_bloqueada: 403,
   servicio_no_disponible: 503,
+  motivo_requerido: 400,      
+  acceso_duplicado: 409,
 };
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof DomainError) {

@@ -4,6 +4,8 @@ import { AccesoRepositoryMongo } from "./adapters/out/mongo/acceso.repository.mo
 import { ReventaRepositoryMongo } from "./adapters/out/mongo/reventa.repository.mongo.ts";
 import { ValidarIngreso } from "./application/use-cases/validar-ingreso.ts";
 import { ListarReventas } from "./application/use-cases/listar-reventas.ts";
+import { RegistrarAcceso } from "./application/use-cases/registrar-acceso.ts";
+import { ListarAccesos } from "./application/use-cases/listar-accesos.ts";
 import { QrVerifierHmac } from "./adapters/out/crypto/qr-verifier.hmac.ts";
 import { TokenProvider } from "./adapters/out/gateway-clients/token-provider.ts";
 import { GatewayHttpClient } from "./adapters/out/gateway-clients/http-client.ts";
@@ -36,13 +38,21 @@ export function componer(
     maxRetries: cfg.maxRetries,
   });
   const reventaRepo = new ReventaRepositoryMongo(db);
+  const accesoRepo = new AccesoRepositoryMongo(db);
+  const clock = { ahora: () => new Date() };
   const validarIngreso = new ValidarIngreso({
-    accesoRepo: new AccesoRepositoryMongo(db),
+    accesoRepo,
     reventaRepo,
     boletasGateway: new BoletasGatewayHttp(httpClient),
     qrVerifier: new QrVerifierHmac(cfg.qrSecret),
-    clock: { ahora: () => new Date() },
+    clock,
     generarId: randomUUID,
   });
-  return crearServidor({ db, validarIngreso, listarReventas: new ListarReventas(reventaRepo) });
+  return crearServidor({
+    db,
+    validarIngreso,
+    registrarAcceso: new RegistrarAcceso({ accesoRepo, clock, generarId: randomUUID }),
+    listarAccesos: new ListarAccesos(accesoRepo),
+    listarReventas: new ListarReventas(reventaRepo),
+  });
 }
