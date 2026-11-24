@@ -1,8 +1,7 @@
 import { z } from "zod";
 const schema = z.object({
   PORT: z.coerce.number().default(3000),
-  MONGODB_URI: z.string().min(1),
-  MONGODB_DB: z.string().default("acceso_reventa"),
+  MONGODB_URI: z.string().regex(/^mongodb(?:\+srv)?:\/\/[^/?#]+\/[^/?#]+(?:\?[^#]*)?$/, "MONGODB_URI debe incluir el nombre de la base de datos"),
   QR_SECRET: z.string().min(16),
   GATEWAY_URL: z
     .string()

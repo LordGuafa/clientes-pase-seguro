@@ -4,7 +4,7 @@ import { crearIndices } from "./adapters/out/mongo/indexes.ts";
 import { componer } from "./composition-root.ts";
 
 async function main() {
-  const db = await conectarMongo(env.MONGODB_URI, env.MONGODB_DB);
+  const db = await conectarMongo(env.MONGODB_URI);
   await crearIndices(db);
   console.log("Conexión a MongoDB establecida e índices listos.");
 
