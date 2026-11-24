@@ -1,89 +1,152 @@
-import { z } from "zod";
 import { ServicioNoDisponible } from "../../../domain/errors.ts";
 
-const tokenResponseSchema = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().positive().optional(),
-});
+type FetchFn = typeof fetch;
 
-export interface TokenProviderConfig {
-  baseUrl: string;
-  tokenPath: string;
-  clientId: string;
-  clientSecret: string;
-  timeoutMs: number;
+// SUPUESTO: confirmar con el líder del gateway
+function construirBodyToken(clientId: string, clientSecret: string): string {
+  const params = new URLSearchParams();
+  params.set("grant_type", "client_credentials");
+  params.set("client_id", clientId);
+  params.set("client_secret", clientSecret);
+  return params.toString();
+}
+
+// SUPUESTO: confirmar con el líder del gateway
+function parsearRespuestaToken(body: unknown): { accessToken: string; expiresInSec?: number } {
+  if (!body || typeof body !== "object") {
+    throw new Error("cuerpo inválido");
+  }
+  const b = body as Record<string, unknown>;
+  if (typeof b.access_token !== "string" || b.access_token.length === 0) {
+    throw new Error("access_token inválido");
+  }
+  const expiresInSec =
+    typeof b.expires_in === "number" && Number.isFinite(b.expires_in)
+      ? b.expires_in
+      : undefined;
+  return { accessToken: b.access_token, expiresInSec };
+}
+
+function decodificarExpJwt(token: string): number | undefined {
+  const partes = token.split(".");
+  if (partes.length < 2) return undefined;
+  try {
+    const payload = Buffer.from(partes[1], "base64url").toString("utf8");
+    const obj = JSON.parse(payload) as { exp?: unknown };
+    if (typeof obj.exp === "number" && Number.isFinite(obj.exp)) {
+      return obj.exp;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 export class TokenProvider {
+  private readonly baseUrl: string;
+  private readonly tokenPath: string;
+  private readonly clientId: string;
+  private readonly clientSecret: string;
+  private readonly timeoutMs: number;
+  private readonly fetchFn: FetchFn;
+  private readonly now: () => number;
+
   private cachedToken: string | null = null;
   private expiresAtMs = 0;
   private inflight: Promise<string> | null = null;
 
-  constructor(private readonly cfg: TokenProviderConfig) {}
+  constructor(opts: {
+    baseUrl: string;
+    tokenPath: string;
+    clientId: string;
+    clientSecret: string;
+    timeoutMs: number;
+    fetch?: FetchFn;
+    now?: () => number;
+  }) {
+    this.baseUrl = opts.baseUrl;
+    this.tokenPath = opts.tokenPath;
+    this.clientId = opts.clientId;
+    this.clientSecret = opts.clientSecret;
+    this.timeoutMs = opts.timeoutMs;
+    this.fetchFn = opts.fetch ?? fetch;
+    this.now = opts.now ?? (() => Date.now());
+  }
 
   invalidar(): void {
     this.cachedToken = null;
     this.expiresAtMs = 0;
   }
 
-  async obtenerToken(): Promise<string> {
-    const ahora = Date.now();
+  async obtener(): Promise<string> {
+    const ahora = this.now();
     if (this.cachedToken && ahora < this.expiresAtMs) {
       return this.cachedToken;
     }
     if (this.inflight) {
       return this.inflight;
     }
-
-    this.inflight = this.solicitarNuevoToken().finally(() => {
+    this.inflight = this.solicitarToken().finally(() => {
       this.inflight = null;
     });
     return this.inflight;
   }
 
-  private async solicitarNuevoToken(): Promise<string> {
-    const url = `${this.cfg.baseUrl}${this.cfg.tokenPath}`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.cfg.timeoutMs);
-
+  private async solicitarToken(): Promise<string> {
+    const url = `${this.baseUrl}${this.tokenPath}`;
     try {
-      const res = await fetch(url, {
+      const res = await this.fetchFn(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          grant_type: "client_credentials",
-          client_id: this.cfg.clientId,
-          client_secret: this.cfg.clientSecret,
-        }),
-        signal: controller.signal,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: construirBodyToken(this.clientId, this.clientSecret),
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
 
+      if (res.status === 401 || res.status === 403) {
+        console.error("Error al obtener token del gateway", { status: res.status });
+        throw new ServicioNoDisponible("Gateway");
+      }
       if (!res.ok) {
-        console.error(
-          `Error de autenticación contra el gateway en ${this.cfg.tokenPath}: código ${res.status}`,
-        );
-        throw new ServicioNoDisponible("API Gateway");
+        console.error("Error al obtener token del gateway", { status: res.status });
+        throw new ServicioNoDisponible("Gateway");
       }
 
-      const raw = await res.json();
-      const parsed = tokenResponseSchema.safeParse(raw);
-      if (!parsed.success) {
-        console.error("Respuesta de token del gateway no cumple el esquema esperado");
-        throw new ServicioNoDisponible("API Gateway");
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch {
+        console.error("Error al obtener token del gateway", { causa: "json_invalido" });
+        throw new ServicioNoDisponible("Gateway");
       }
 
-      const ttlSeconds = Math.max(1, (parsed.data.expires_in ?? 300) - 5);
-      this.cachedToken = parsed.data.access_token;
-      this.expiresAtMs = Date.now() + ttlSeconds * 1000;
-      return this.cachedToken;
-    } catch (err) {
-      if (err instanceof ServicioNoDisponible) {
-        throw err;
+      let parsed: { accessToken: string; expiresInSec?: number };
+      try {
+        parsed = parsearRespuestaToken(body);
+      } catch {
+        console.error("Error al obtener token del gateway", { causa: "cuerpo_invalido" });
+        throw new ServicioNoDisponible("Gateway");
       }
-      console.error("Fallo de red al solicitar token al gateway");
-      throw new ServicioNoDisponible("API Gateway");
-    } finally {
-      clearTimeout(timer);
+
+      const ahora = this.now();
+      let expiresInSec = parsed.expiresInSec;
+      if (expiresInSec == null) {
+        const exp = decodificarExpJwt(parsed.accessToken);
+        if (exp != null) {
+          expiresInSec = exp - Math.floor(ahora / 1000);
+        } else {
+          expiresInSec = 60;
+        }
+      }
+      this.cachedToken = parsed.accessToken;
+      this.expiresAtMs = ahora + Math.max(0, expiresInSec - 30) * 1000;
+      return parsed.accessToken;
+    } catch (e) {
+      if (e instanceof ServicioNoDisponible) {
+        throw e;
+      }
+      const causa = e instanceof Error ? e.message : "error_desconocido";
+      console.error("Error al obtener token del gateway", { causa });
+      throw new ServicioNoDisponible("Gateway");
     }
   }
 }

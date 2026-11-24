@@ -1,21 +1,20 @@
 import type { Db } from "mongodb";
 
 export async function crearIndices(db: Db): Promise<void> {
-  const accesos = db.collection("accesos");
-  await accesos.createIndex({ boletaCodigo: 1 });
-  await accesos.createIndex({ eventoId: 1 });
-  // Cierra la carrera de doble escaneo: solo un ingreso "aceptado" por boletaCodigo
-  await accesos.createIndex(
+  // Índice compuesto { boletaCodigo: 1, resultado: 1 } cubre consultas por boletaCodigo
+  // sin chocar en clave con el índice único parcial uniq_acceso_aceptado_por_boleta.
+  await db.collection("accesos").createIndex({ boletaCodigo: 1, resultado: 1 });
+  await db.collection("accesos").createIndex(
     { boletaCodigo: 1 },
     {
       unique: true,
-      name: "uniq_boleta_acceso_aceptado",
       partialFilterExpression: { resultado: "aceptado" },
+      name: "uniq_acceso_aceptado_por_boleta",
     },
   );
 
-  const reventas = db.collection("reventas");
-  await reventas.createIndex({ boletaCodigo: 1 });
-  await reventas.createIndex({ vendedorId: 1 });
-  await reventas.createIndex({ marcaSospechosa: 1 });
+  await db.collection("reventas").createIndex({ boletaCodigo: 1 });
+  await db
+    .collection("reventas")
+    .createIndex({ vendedorId: 1, registradaEn: -1 });
 }

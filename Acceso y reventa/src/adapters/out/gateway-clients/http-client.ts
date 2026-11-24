@@ -1,115 +1,104 @@
 import { ServicioNoDisponible } from "../../../domain/errors.ts";
 import type { TokenProvider } from "./token-provider.ts";
 
-export interface GatewayHttpClientConfig {
-  baseUrl: string;
-  tokenProvider: TokenProvider;
-  timeoutMs: number;
-  maxRetries: number;
-  sleep?: (ms: number) => Promise<void>;
-}
-
-export interface GatewayHttpResponse {
-  status: number;
-  body: unknown;
-}
-
-const defaultSleep = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
+type FetchFn = typeof fetch;
 
 export class GatewayHttpClient {
+  private readonly baseUrl: string;
+  private readonly tokenProvider: TokenProvider;
+  private readonly timeoutMs: number;
+  private readonly maxRetries: number;
+  private readonly fetchFn: FetchFn;
   private readonly sleep: (ms: number) => Promise<void>;
 
-  constructor(private readonly cfg: GatewayHttpClientConfig) {
-    this.sleep = cfg.sleep ?? defaultSleep;
+  constructor(opts: {
+    baseUrl: string;
+    tokenProvider: TokenProvider;
+    timeoutMs: number;
+    maxRetries: number;
+    fetch?: FetchFn;
+    sleep?: (ms: number) => Promise<void>;
+  }) {
+    this.baseUrl = opts.baseUrl;
+    this.tokenProvider = opts.tokenProvider;
+    this.timeoutMs = opts.timeoutMs;
+    this.maxRetries = opts.maxRetries;
+    this.fetchFn = opts.fetch ?? fetch;
+    this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   }
 
-  async get(path: string): Promise<GatewayHttpResponse> {
-    return this.request("GET", path);
-  }
-
-  async request(
-    method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
+  async getJson(
     path: string,
-    payload?: unknown,
-  ): Promise<GatewayHttpResponse> {
-    let token = await this.cfg.tokenProvider.obtenerToken();
-    let retried401 = false;
-    let attempt = 0;
+    servicio: string,
+  ): Promise<{ status: 200; body: unknown } | { status: 404 }> {
+    let refreshedAfter401 = false;
+    let transientRetries = 0;
 
     while (true) {
+      const token = await this.tokenProvider.obtener();
       let res: Response;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.cfg.timeoutMs);
-
       try {
-        const headers: Record<string, string> = {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        };
-        if (payload !== undefined) {
-          headers["Content-Type"] = "application/json";
-        }
-
-        res = await fetch(`${this.cfg.baseUrl}${path}`, {
-          method,
-          headers,
-          body: payload !== undefined ? JSON.stringify(payload) : undefined,
-          signal: controller.signal,
+        res = await this.fetchFn(`${this.baseUrl}${path}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+          signal: AbortSignal.timeout(this.timeoutMs),
         });
       } catch {
-        clearTimeout(timer);
-        if (attempt < this.cfg.maxRetries) {
-          attempt++;
-          await this.sleep(100 * attempt);
+        if (transientRetries < this.maxRetries) {
+          await this.sleep(this.backoffMs(transientRetries));
+          transientRetries++;
           continue;
         }
-        throw new ServicioNoDisponible("Servicio vecino");
-      } finally {
-        clearTimeout(timer);
+        throw new ServicioNoDisponible(servicio);
       }
 
-      if (res.status === 401) {
-        if (!retried401) {
-          retried401 = true;
-          this.cfg.tokenProvider.invalidar();
-          token = await this.cfg.tokenProvider.obtenerToken();
-          continue;
+      if (res.status === 200) {
+        try {
+          const body = (await res.json()) as unknown;
+          return { status: 200, body };
+        } catch {
+          console.error("Respuesta ilegible del gateway", { metodo: "GET", ruta: path, status: res.status });
+          throw new ServicioNoDisponible(servicio);
         }
-        console.error(`Credenciales rechazadas tras renovar token en ${method} ${path} (401)`);
-        throw new ServicioNoDisponible("API Gateway");
-      }
-
-      if (res.status === 403) {
-        console.error(`Permiso insuficiente en el gateway para ${method} ${path} (403)`);
-        throw new ServicioNoDisponible("API Gateway");
       }
 
       if (res.status === 404) {
-        return { status: 404, body: null };
+        return { status: 404 };
       }
 
-      if (res.status >= 500) {
-        if (attempt < this.cfg.maxRetries) {
-          attempt++;
-          await this.sleep(100 * attempt);
+      if (res.status === 401) {
+        if (!refreshedAfter401) {
+          this.tokenProvider.invalidar();
+          refreshedAfter401 = true;
           continue;
         }
-        throw new ServicioNoDisponible("Servicio vecino");
+        console.error("Credenciales rechazadas por el gateway");
+        throw new ServicioNoDisponible(servicio);
       }
 
-      let body: unknown = null;
-      const text = await res.text();
-      if (text.length > 0) {
-        try {
-          body = JSON.parse(text);
-        } catch {
-          console.error(`Respuesta no JSON desde ${method} ${path}`);
-          throw new ServicioNoDisponible("Servicio vecino");
+      if (res.status === 403) {
+        console.error("Permisos insuficientes en el gateway (revisar alcances)");
+        throw new ServicioNoDisponible(servicio);
+      }
+
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        if (transientRetries < this.maxRetries) {
+          await this.sleep(this.backoffMs(transientRetries));
+          transientRetries++;
+          continue;
         }
+        throw new ServicioNoDisponible(servicio);
       }
 
-      return { status: res.status, body };
+      console.error("Respuesta inesperada del gateway", { metodo: "GET", ruta: path, status: res.status });
+      throw new ServicioNoDisponible(servicio);
     }
+  }
+
+  private backoffMs(attempt: number): number {
+    return attempt === 0 ? 200 : 400;
   }
 }

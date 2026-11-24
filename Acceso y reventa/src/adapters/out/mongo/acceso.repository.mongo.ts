@@ -1,14 +1,15 @@
-import { MongoServerError, type Collection, type Db, type Filter } from "mongodb";
-import type {
-  AccesoFiltros,
-  AccesoRepository,
-} from "../../../application/ports/out/acceso-repository.ts";
-import { AccesoAceptadoDuplicado } from "../../../domain/errors.ts";
+import type { Collection, Db, Filter } from "mongodb";
 import type { Acceso } from "../../../domain/model/acceso.ts";
+import type { AccesoRepository } from "../../../application/ports/out/acceso-repository.ts";
+import { AccesoAceptadoDuplicado } from "../../../domain/errors.ts";
+import { MongoServerError } from "mongodb";
+type AccesoDoc = Omit<Acceso, "id"> & { _id: string };
 
-interface AccesoDoc extends Acceso {
-  _id?: unknown;
-}
+const aDoc = ({ id, ...resto }: Acceso): AccesoDoc => ({ _id: id, ...resto });
+const aDominio = ({ _id, ...resto }: AccesoDoc): Acceso => ({
+  id: _id,
+  ...resto,
+});
 
 export class AccesoRepositoryMongo implements AccesoRepository {
   private readonly col: Collection<AccesoDoc>;
@@ -19,60 +20,33 @@ export class AccesoRepositoryMongo implements AccesoRepository {
 
   async guardar(acceso: Acceso): Promise<void> {
     try {
-      await this.col.insertOne({ ...acceso });
-    } catch (err) {
-      if (err instanceof MongoServerError && err.code === 11000) {
+      await this.col.insertOne(aDoc(acceso));
+    } catch (e) {
+      if (e instanceof MongoServerError && e.code === 11000)
         throw new AccesoAceptadoDuplicado();
-      }
-      throw err;
+      throw e;
     }
   }
 
   async buscarAceptadoPorBoleta(boletaCodigo: string): Promise<Acceso | null> {
-    const doc = await this.col.findOne(
-      { boletaCodigo, resultado: "aceptado" },
-      { projection: { _id: 0 } },
-    );
-    if (!doc) return null;
-    return {
-      id: doc.id,
-      boletaCodigo: doc.boletaCodigo,
-      eventoId: doc.eventoId,
-      puerta: doc.puerta,
-      resultado: doc.resultado,
-      motivo: doc.motivo,
-      registradoEn: new Date(doc.registradoEn),
-    };
+    const doc = await this.col.findOne({ boletaCodigo, resultado: "aceptado" });
+    return doc ? aDominio(doc) : null;
   }
 
-  async listar(filtros: AccesoFiltros): Promise<{ items: Acceso[]; total: number }> {
-    const query: Filter<AccesoDoc> = {};
-    if (filtros.eventoId) query.eventoId = filtros.eventoId;
-    if (filtros.boletaCodigo) query.boletaCodigo = filtros.boletaCodigo;
-    if (filtros.resultado) query.resultado = filtros.resultado;
-
-    const skip = Math.max(0, (filtros.pagina - 1) * filtros.tamano);
+  async listar(f: Parameters<AccesoRepository["listar"]>[0]) {
+    const filtro: Filter<AccesoDoc> = {};
+    if (f.eventoId) filtro.eventoId = f.eventoId;
+    if (f.boletaCodigo) filtro.boletaCodigo = f.boletaCodigo;
+    if (f.resultado) filtro.resultado = f.resultado;
     const [docs, total] = await Promise.all([
       this.col
-        .find(query, { projection: { _id: 0 } })
+        .find(filtro)
         .sort({ registradoEn: -1 })
-        .skip(skip)
-        .limit(filtros.tamano)
+        .skip((f.pagina - 1) * f.tamano)
+        .limit(f.tamano)
         .toArray(),
-      this.col.countDocuments(query),
+      this.col.countDocuments(filtro),
     ]);
-
-    return {
-      items: docs.map((d) => ({
-        id: d.id,
-        boletaCodigo: d.boletaCodigo,
-        eventoId: d.eventoId,
-        puerta: d.puerta,
-        resultado: d.resultado,
-        motivo: d.motivo,
-        registradoEn: new Date(d.registradoEn),
-      })),
-      total,
-    };
+    return { items: docs.map(aDominio), total };
   }
 }

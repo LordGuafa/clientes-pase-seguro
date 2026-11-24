@@ -1,16 +1,13 @@
 import { MongoClient, type Db } from "mongodb";
 
-let client: MongoClient | null = null;
+let client: MongoClient | undefined;
 
 export async function conectarMongo(uri: string, dbName: string): Promise<Db> {
-  client = new MongoClient(uri);
+  client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
   await client.connect();
   return client.db(dbName);
 }
 
 export async function cerrarMongo(): Promise<void> {
-  if (client) {
-    await client.close();
-    client = null;
-  }
+  await client?.close();
 }
