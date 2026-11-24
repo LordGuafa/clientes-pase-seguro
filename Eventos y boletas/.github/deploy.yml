@@ -1,0 +1,17 @@
+name: Deploy
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  deploy:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Eventos y boletas
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container
+        run: docker build -t eventos-y-boletas:${{ github.sha }} .

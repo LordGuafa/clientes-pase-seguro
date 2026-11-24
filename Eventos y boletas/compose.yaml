@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: eventos-boletas-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${NOMBRE_BASE_DATOS:-eventos_boletas}
+      POSTGRES_USER: ${USUARIO_BASE_DATOS:-pase_seguro}
+      POSTGRES_PASSWORD: ${CLAVE_BASE_DATOS:-clave_local}
+    ports:
+      - "5433:5432"
+    volumes:
+      - datos_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  datos_postgres:
