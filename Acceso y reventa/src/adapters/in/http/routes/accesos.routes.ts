@@ -10,11 +10,12 @@ import {
 
 export function accesosRoutes(deps: {
   validarIngreso: ValidarIngreso;
-  registrarAcceso: RegistrarAcceso;
-  listarAccesos: ListarAccesos;
+  registrarAcceso?: RegistrarAcceso;
+  listarAccesos?: ListarAccesos;
 }): Router {
-  return Router()
-    .post("/accesos/validar", validarIngresoController(deps.validarIngreso))
-    .post("/accesos", registrarAccesoController(deps.registrarAcceso))
-    .get("/accesos", listarAccesosController(deps.listarAccesos));
+  const router = Router().post("/accesos/validar", validarIngresoController(deps.validarIngreso));
+  // A-HU1: registro y consulta de intentos de ingreso
+  if (deps.registrarAcceso) router.post("/accesos", registrarAccesoController(deps.registrarAcceso));
+  if (deps.listarAccesos) router.get("/accesos", listarAccesosController(deps.listarAccesos));
+  return router;
 }

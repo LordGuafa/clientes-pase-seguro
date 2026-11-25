@@ -1,0 +1,327 @@
+openapi: 3.0.3
+info:
+  title: API CRUD Accesos y Reventas - Pase Seguro
+  version: 1.0.0
+  description: >
+    Contrato OpenAPI de la API CRUD del grupo Acceso y reventa (base de datos no relacional MongoDB).
+    Expone el estado de acceso acumulado de cada boleta (A-HU2) consumido por MID Compras y las
+    operaciones de persistencia sobre las colecciones `accesos` y `reventas`.
+  license:
+    name: ISC
+servers:
+  - url: https://gateway-pase-seguro.ejemplo.com
+    description: A través del API Gateway del clúster Pase Seguro
+  - url: http://localhost:3000
+    description: Entorno de desarrollo local
+tags:
+  - name: Sistema
+    description: Verificación de salud y disponibilidad del servicio
+  - name: Registro de Accesos
+    description: Registro y consulta de intentos de ingreso aceptados o rechazados (A-HU1)
+  - name: Boletas - Estado de Acceso
+    description: Consulta de historial de ingreso, transferencias y bloqueo (A-HU2)
+paths:
+  /reventas:
+    get:
+      operationId: listarReventas
+      summary: Consultar el historial de reventas (A-HU3)
+      description: Los filtros se combinan por igualdad. Sin filtros se listan todas, de más reciente a más antigua. Se rechazan parámetros desconocidos o repetidos.
+      security:
+        - clientCredentials: []
+      parameters:
+        - { in: query, name: vendedorId, schema: { type: string, minLength: 1 } }
+        - { in: query, name: boletaCodigo, schema: { type: string, minLength: 1 } }
+        - { in: query, name: marcaSospechosa, description: Acepta únicamente true o false en minúsculas., schema: { type: boolean } }
+      responses:
+        '200':
+          description: Reventas coincidentes o un arreglo vacío.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Reventa' }
+              examples:
+                sinCoincidencias: { value: [] }
+        '400':
+          description: Filtros inválidos (solicitud_invalida).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/SinPermiso' }
+        '500':
+          description: Error interno al consultar el historial.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /accesos:
+    post:
+      operationId: registrarAcceso
+      summary: Registrar un intento de ingreso (A-HU1)
+      description: Guarda un intento de ingreso aceptado o rechazado con puerta y motivo. La hora (registradoEn) la asigna el servidor. Si el resultado es rechazado, el motivo es obligatorio; si es aceptado, se guarda en null.
+      tags: [Registro de Accesos]
+      security:
+        - clientCredentials: [accesos:escribir]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NuevoAcceso' }
+            examples:
+              rechazado:
+                value: { boletaCodigo: c87979ee-e717-4631-94ca-e1007f728c77, eventoId: evt-1, puerta: A, resultado: rechazado, motivo: qr_invalido }
+              aceptado:
+                value: { boletaCodigo: c87979ee-e717-4631-94ca-e1007f728c77, eventoId: evt-1, puerta: B, resultado: aceptado }
+      responses:
+        '201':
+          description: Intento registrado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Acceso' }
+        '400':
+          description: Cuerpo inválido o rechazo sin motivo (solicitud_invalida).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: La boleta ya tiene un acceso aceptado (acceso_duplicado).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Error interno al registrar el intento.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      operationId: listarAccesos
+      summary: Consultar el registro de intentos de ingreso (A-HU1)
+      description: Los filtros se combinan por igualdad (AND). Se ordena del más reciente al más antiguo. Los parámetros desconocidos se rechazan.
+      tags: [Registro de Accesos]
+      security:
+        - clientCredentials: [accesos:leer]
+      parameters:
+        - { in: query, name: eventoId, schema: { type: string, minLength: 1 } }
+        - { in: query, name: boletaCodigo, schema: { type: string, minLength: 1 } }
+        - { in: query, name: resultado, schema: { type: string, enum: [aceptado, rechazado] } }
+        - { in: query, name: pagina, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: tamano, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Página de intentos que coinciden.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaAccesos' }
+        '400':
+          description: Filtros o paginación inválidos (solicitud_invalida).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '500':
+          description: Error interno al consultar el registro.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /health:
+    get:
+      summary: Verifica que el proceso del servicio está activo
+      operationId: healthCrud
+      tags: [Sistema]
+      security: []
+      responses:
+        '200':
+          description: El servicio está activo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /health/ready:
+    get:
+      summary: Verifica conectividad activa con MongoDB
+      operationId: healthReadyCrud
+      tags: [Sistema]
+      security: []
+      responses:
+        '200':
+          description: Servicio y MongoDB operativos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+        '503':
+          description: MongoDB no responde dentro del tiempo límite
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessStatus'
+  /boletas/{codigo}/estado-acceso:
+    get:
+      summary: Resumen del estado de acceso y transferencias de una boleta (A-HU2)
+      description: >
+        Indica si una boleta ya registró un ingreso aceptado, cuántas transferencias completadas
+        acumula y si está bloqueada por actividad sospechosa. Para una boleta sin historial en
+        MongoDB responde 200 con `ingreso: false`, `transferencias: 0` y `bloqueada: false`
+        (nunca 404, ya que la boleta puede existir en Eventos y boletas sin movimientos previos).
+      operationId: obtenerEstadoAccesoBoleta
+      tags: [Boletas - Estado de Acceso]
+      security:
+        - clientCredentials: [accesos:leer]
+      parameters:
+        - name: codigo
+          in: path
+          required: true
+          description: Identificador UUID único de la boleta
+          schema:
+            type: string
+            format: uuid
+            example: b7a1c2d3-1111-4222-8333-444455556666
+      responses:
+        '200':
+          description: Resumen actual del estado de acceso de la boleta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstadoAccesoBoleta'
+        '400':
+          description: El parámetro `codigo` no tiene formato UUID válido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+components:
+  securitySchemes:
+    clientCredentials:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://gateway-pase-seguro.ejemplo.com/token
+          scopes:
+            accesos:leer: Consultar el estado de acceso, transferencias y bloqueo de una boleta, y el registro de intentos de ingreso
+            accesos:escribir: Registrar intentos de ingreso (A-HU1)
+  schemas:
+    Reventa:
+      type: object
+      required: [id, boletaCodigo, vendedorId, compradorId, precio, estado, marcaSospechosa, registradaEn]
+      properties:
+        id: { type: string }
+        boletaCodigo: { type: string }
+        vendedorId: { type: string }
+        compradorId: { type: string }
+        precio: { type: number, description: Precio en COP }
+        estado: { type: string, enum: [pendiente, completada, cancelada, bloqueada] }
+        marcaSospechosa: { type: boolean }
+        registradaEn: { type: string, format: date-time }
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+    ReadinessStatus:
+      type: object
+      required: [status, mongo]
+      properties:
+        status:
+          type: string
+          enum: [ok, degradado]
+          example: ok
+        mongo:
+          type: string
+          enum: [ok, caído]
+          example: ok
+    EstadoAccesoBoleta:
+      type: object
+      required: [boletaCodigo, ingreso, transferencias, bloqueada]
+      properties:
+        boletaCodigo:
+          type: string
+          format: uuid
+          example: b7a1c2d3-1111-4222-8333-444455556666
+        ingreso:
+          type: boolean
+          description: "`true` si existe un acceso `aceptado` previo para esta boleta"
+          example: false
+        transferencias:
+          type: integer
+          minimum: 0
+          description: Cantidad acumulada de reventas con estado `completada`
+          example: 0
+        bloqueada:
+          type: boolean
+          description: "`true` si la boleta presenta alguna reventa con `marcaSospechosa: true`"
+          example: false
+    NuevoAcceso:
+      type: object
+      additionalProperties: false
+      required: [boletaCodigo, eventoId, puerta, resultado]
+      properties:
+        boletaCodigo: { type: string, minLength: 1, maxLength: 100 }
+        eventoId: { type: string, minLength: 1, maxLength: 100 }
+        puerta: { type: string, minLength: 1, maxLength: 20 }
+        resultado: { type: string, enum: [aceptado, rechazado] }
+        motivo:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: Obligatorio cuando resultado es rechazado.
+    Acceso:
+      type: object
+      required: [id, boletaCodigo, eventoId, puerta, resultado, motivo, registradoEn]
+      properties:
+        id: { type: string }
+        boletaCodigo: { type: string }
+        eventoId: { type: string }
+        puerta: { type: string }
+        resultado: { type: string, enum: [aceptado, rechazado] }
+        motivo: { type: string, nullable: true }
+        registradoEn: { type: string, format: date-time }
+    PaginaAccesos:
+      type: object
+      required: [items, total, pagina, tamano]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Acceso' }
+        total: { type: integer }
+        pagina: { type: integer }
+        tamano: { type: integer }
+    Error:
+      type: object
+      required: [codigo, mensaje]
+      properties:
+        codigo:
+          type: string
+          example: solicitud_invalida
+        mensaje:
+          type: string
+          example: El código de la boleta debe ser un UUID válido
+        detalle:
+          type: object
+          additionalProperties: true
+  responses:
+    NoAutenticado:
+      description: Token ausente, inválido o vencido en el API Gateway
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SinPermiso:
+      description: Sin alcance requerido o petición directa sin cabecera X-Gateway-Secret
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

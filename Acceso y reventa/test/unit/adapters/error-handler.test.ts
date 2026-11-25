@@ -15,6 +15,7 @@ describe("error-handler", () => {
     ["boleta_ya_usada", 409],
     ["boleta_bloqueada", 403],
     ["servicio_no_disponible", 503],
+    ["proveedor_qr_no_disponible", 503],
   ])("mapea %s a %i", async (codigo, status) => {
     const app = express();
     app.get("/x", (_req, _res, next) => {
@@ -26,6 +27,21 @@ describe("error-handler", () => {
 
     expect(res.status).toBe(status);
     expect(res.body).toEqual({ codigo, mensaje: "mensaje", detalle: { a: 1 } });
+  });
+
+  it("JSON mal formado en express.json() -> 400 solicitud_invalida (no 500)", async () => {
+    const app = express();
+    app.use(express.json());
+    app.post("/x", (_req, res) => res.json({ ok: true }));
+    app.use(errorHandler);
+
+    const res = await request(app)
+      .post("/x")
+      .set("Content-Type", "application/json")
+      .send("{json-roto");
+
+    expect(res.status).toBe(400);
+    expect(res.body.codigo).toBe("solicitud_invalida");
   });
 
   it("Error no controlado -> 500 sin filtrar mensaje interno", async () => {
