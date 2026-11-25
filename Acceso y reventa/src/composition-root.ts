@@ -17,6 +17,7 @@ export function componer(
   cfg: {
     qrSecret: string;
     gatewayUrl: string;
+    gatewaySecret: string;
     tokenPath: string;
     clientId: string;
     clientSecret: string;
@@ -54,5 +55,6 @@ export function componer(
     registrarAcceso: new RegistrarAcceso({ accesoRepo, clock, generarId: randomUUID }),
     listarAccesos: new ListarAccesos(accesoRepo),
     listarReventas: new ListarReventas(reventaRepo),
+    gatewaySecret: cfg.gatewaySecret,
   });
 }

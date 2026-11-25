@@ -11,6 +11,7 @@ async function main() {
   const app = componer(db, {
     qrSecret: env.QR_SECRET,
     gatewayUrl: env.GATEWAY_URL,
+    gatewaySecret: env.GATEWAY_SECRET,
     tokenPath: env.GATEWAY_TOKEN_PATH,
     clientId: env.CLIENT_ID,
     clientSecret: env.CLIENT_SECRET,

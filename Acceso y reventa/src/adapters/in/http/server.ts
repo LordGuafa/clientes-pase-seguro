@@ -7,6 +7,7 @@ import { reventasRoutes } from "./routes/reventas.routes.ts";
 import type { ListarReventas } from "../../../application/use-cases/listar-reventas.ts";
 import type { RegistrarAcceso } from "../../../application/use-cases/registrar-acceso.ts";
 import type { ListarAccesos } from "../../../application/use-cases/listar-accesos.ts";
+import { exigirGatewaySecret } from "./middlewares/gateway-secret.ts";
 import { errorHandler } from "./middlewares/error-handler.ts";
 
 export function crearServidor(deps: {
@@ -15,10 +16,12 @@ export function crearServidor(deps: {
   registrarAcceso: RegistrarAcceso;
   listarAccesos: ListarAccesos;
   listarReventas: ListarReventas;
+  gatewaySecret?: string;
 }) {
   const app = express();
   app.use(express.json());
-
+  // Todo lo que no sea /health debe venir del gateway con la cabecera secreta
+  app.use(exigirGatewaySecret(deps.gatewaySecret));
   app.use(healthRoutes(deps.db));
   app.use(accesosRoutes(deps));
   app.use(reventasRoutes(deps.listarReventas));
