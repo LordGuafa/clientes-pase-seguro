@@ -15,7 +15,7 @@ it.skipIf(!uri)("A-HU3: consulta reventas en Mongo y devuelve por HTTP sólo las
   if (db.databaseName !== "pase-seguro-test") {
     throw new Error("MONGO_TEST_URI debe apuntar a pase-seguro-test");
   }
-  const col = db.collection("reventas");
+  const col = db.collection("reventas-test");
   const base = { vendedorId: randomUUID(), compradorId: "v3", precio: 90000, estado: "completada", boletaCodigo: randomUUID(), marcaSospechosa: false, registradaEn: new Date(0) };
   const ids = Array.from({ length: 5 }, () => new ObjectId());
   try {

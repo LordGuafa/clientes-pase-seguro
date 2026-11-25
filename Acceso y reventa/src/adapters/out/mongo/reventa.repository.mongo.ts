@@ -1,6 +1,7 @@
 import type { Collection, Db, Filter, ObjectId } from "mongodb";
 import type { ConsultaReventas, FiltrosReventa, EstadoTransferenciasRepository } from "../../../application/ports/out/reventas-repository.ts";
 import type { Reventa } from "../../../domain/model/reventa.ts";
+import { colecciones } from "./colecciones.ts";
 
 type ReventaDoc = Omit<Reventa, "id"> & { id?: string; _id: string | ObjectId };
 
@@ -8,7 +9,7 @@ export class ReventaRepositoryMongo implements EstadoTransferenciasRepository, C
   private readonly col: Collection<ReventaDoc>;
 
   constructor(db: Db) {
-    this.col = db.collection<ReventaDoc>("reventas");
+    this.col = db.collection<ReventaDoc>(colecciones(db).reventas);
   }
 
   async existeSospechosaPorBoleta(boletaCodigo: string): Promise<boolean> {

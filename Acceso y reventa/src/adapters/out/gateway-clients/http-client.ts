@@ -31,6 +31,25 @@ export class GatewayHttpClient {
     path: string,
     servicio: string,
   ): Promise<{ status: 200; body: unknown } | { status: 404 }> {
+    const res = await this.solicitar("GET", path, servicio);
+    if (res.status === 404) return { status: 404 };
+    if (res.status !== 200) throw new ServicioNoDisponible(servicio);
+    return { status: 200, body: await this.leerJson(res, servicio) };
+  }
+
+  async postJson(path: string, servicio: string, datos: unknown) {
+    const res = await this.solicitar("POST", path, servicio, datos);
+    if (res.status !== 201 && res.status !== 409) throw new ServicioNoDisponible(servicio);
+    return { status: res.status, body: await this.leerJson(res, servicio) };
+  }
+
+  private async leerJson(res: Response, servicio: string): Promise<unknown> {
+    try { return await res.json(); } catch { throw new ServicioNoDisponible(servicio); }
+  }
+
+  private async solicitar(metodo: "GET" | "POST", path: string, servicio: string, datos?: unknown) {
+    // Un POST podría haberse confirmado aunque se pierda la respuesta.
+    const limite = metodo === "GET" ? this.maxRetries : 0;
     let refreshedAfter401 = false;
     let transientRetries = 0;
 
@@ -39,34 +58,22 @@ export class GatewayHttpClient {
       let res: Response;
       try {
         res = await this.fetchFn(`${this.baseUrl}${path}`, {
-          method: "GET",
+          method: metodo,
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: "application/json",
+            ...(metodo === "POST" && { "Content-Type": "application/json" }),
           },
           signal: AbortSignal.timeout(this.timeoutMs),
+          body: metodo === "POST" ? JSON.stringify(datos) : undefined,
         });
       } catch {
-        if (transientRetries < this.maxRetries) {
+        if (transientRetries < limite) {
           await this.sleep(this.backoffMs(transientRetries));
           transientRetries++;
           continue;
         }
         throw new ServicioNoDisponible(servicio);
-      }
-
-      if (res.status === 200) {
-        try {
-          const body = (await res.json()) as unknown;
-          return { status: 200, body };
-        } catch {
-          console.error("Respuesta ilegible del gateway", { metodo: "GET", ruta: path, status: res.status });
-          throw new ServicioNoDisponible(servicio);
-        }
-      }
-
-      if (res.status === 404) {
-        return { status: 404 };
       }
 
       if (res.status === 401) {
@@ -85,7 +92,7 @@ export class GatewayHttpClient {
       }
 
       if (res.status === 502 || res.status === 503 || res.status === 504) {
-        if (transientRetries < this.maxRetries) {
+        if (transientRetries < limite) {
           await this.sleep(this.backoffMs(transientRetries));
           transientRetries++;
           continue;
@@ -93,8 +100,7 @@ export class GatewayHttpClient {
         throw new ServicioNoDisponible(servicio);
       }
 
-      console.error("Respuesta inesperada del gateway", { metodo: "GET", ruta: path, status: res.status });
-      throw new ServicioNoDisponible(servicio);
+      return res;
     }
   }
 

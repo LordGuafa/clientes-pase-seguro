@@ -3,6 +3,7 @@ import type { Acceso } from "../../../domain/model/acceso.ts";
 import type { AccesoRepository } from "../../../application/ports/out/acceso-repository.ts";
 import { AccesoAceptadoDuplicado } from "../../../domain/errors.ts";
 import { MongoServerError } from "mongodb";
+import { colecciones } from "./colecciones.ts";
 type AccesoDoc = Omit<Acceso, "id"> & { _id: string };
 
 const aDoc = ({ id, ...resto }: Acceso): AccesoDoc => ({ _id: id, ...resto });
@@ -15,7 +16,7 @@ export class AccesoRepositoryMongo implements AccesoRepository {
   private readonly col: Collection<AccesoDoc>;
 
   constructor(db: Db) {
-    this.col = db.collection<AccesoDoc>("accesos");
+    this.col = db.collection<AccesoDoc>(colecciones(db).accesos);
   }
 
   async guardar(acceso: Acceso): Promise<void> {

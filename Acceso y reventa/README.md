@@ -21,6 +21,8 @@ Todas las rutas de negocio exigen la cabecera `X-Gateway-Secret` inyectada por e
   - Si la boleta no tiene movimientos previos en MongoDB, responde `200 OK` con `{ ingreso: false, transferencias: 0, bloqueada: false }` (nunca `404`).
 
 ### API MID — Validación de Ingreso y Emisión Visual de QR
+El MID consume por `GATEWAY_URL` dos CRUD: **Eventos y boletas** para consultar la boleta y el evento, y **Accesos y reventas** para consultar estado e historial y registrar intentos. En el gateway, la credencial del MID necesita `boletas:leer`, `accesos:leer` y `accesos:escribir`. Enrutar `GET /boletas/{codigo}/estado-acceso` al CRUD de Acceso y reventa y `GET /boletas/{codigo}` al CRUD de Eventos y boletas. Un fallo al consultar historial devuelve `503`; el registro por `POST /accesos` no se reintenta ante un timeout o `5xx` porque el CRUD podría haber confirmado la escritura.
+
 - `POST /accesos/validar` (alcance `boletas:leer`):
   - Verifica formato y firma HMAC-SHA256 (`QR_SECRET`), consulta boleta y evento en *Eventos y boletas* a través del Gateway (OAuth2 `client_credentials` con renovación en `401` y reintentos en `503`), impide doble uso (`409 boleta_ya_usada` con índice único parcial en MongoDB) y rechaza boletas bloqueadas (`403 boleta_bloqueada`), registrando cada intento (`aceptado` o `rechazado`).
 - `GET /boletas/{codigo}/qr` (alcances `boletas:leer`, `accesos:leer`):

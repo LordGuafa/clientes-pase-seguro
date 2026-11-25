@@ -2,7 +2,7 @@ import { DomainError } from "../../domain/errors.ts";
 import type { BoletasGateway } from "../ports/out/boletas-gateway.ts";
 import type { QrImageGenerator } from "../ports/out/qr-image-generator.ts";
 import type { QrSigner } from "../ports/out/qr-verifier.ts";
-import type { ObtenerEstadoAcceso } from "./obtener-estado-acceso.ts";
+import type { AccesosGateway } from "../ports/out/accesos-gateway.ts";
 
 export interface GenerarQrBoletaInput {
   boletaCodigo: string;
@@ -22,7 +22,7 @@ export interface GenerarQrBoletaOutput {
 
 interface Deps {
   boletasGateway: BoletasGateway;
-  obtenerEstadoAcceso: ObtenerEstadoAcceso;
+  accesosGateway: Pick<AccesosGateway, "obtenerEstado">;
   qrSigner: QrSigner;
   qrImageGenerator: QrImageGenerator;
 }
@@ -46,7 +46,7 @@ export class GenerarQrBoleta {
     }
 
     // 2. Consultar estado de acceso local (A-HU2: ingreso previo o bloqueo sospechoso)
-    const estadoAcceso = await this.d.obtenerEstadoAcceso.ejecutar(boletaCodigo);
+    const estadoAcceso = await this.d.accesosGateway.obtenerEstado(boletaCodigo);
     if (estadoAcceso.ingreso) {
       throw new DomainError(
         "boleta_ya_usada",

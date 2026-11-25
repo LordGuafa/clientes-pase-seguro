@@ -12,6 +12,7 @@ import { QrVerifierHmac } from "./adapters/out/crypto/qr-verifier.hmac.ts";
 import { TokenProvider } from "./adapters/out/gateway-clients/token-provider.ts";
 import { GatewayHttpClient } from "./adapters/out/gateway-clients/http-client.ts";
 import { BoletasGatewayHttp } from "./adapters/out/gateway-clients/boletas.gateway.http.ts";
+import { AccesosGatewayHttp } from "./adapters/out/gateway-clients/accesos.gateway.http.ts";
 import { QuickChartQrClient } from "./adapters/out/external-qr/quickchart-qr.client.ts";
 import { crearServidor } from "./adapters/in/http/server.ts";
 
@@ -51,6 +52,7 @@ export function componer(
   const accesoRepo = new AccesoRepositoryMongo(db);
   const reventaRepo = new ReventaRepositoryMongo(db);
   const boletasGateway = new BoletasGatewayHttp(httpClient);
+  const accesosGateway = new AccesosGatewayHttp(httpClient);
   const qrCrypto = new QrVerifierHmac(cfg.qrSecret);
   const qrImageGenerator = new QuickChartQrClient({
     baseUrl: cfg.qrApiUrl ?? "https://quickchart.io/qr",
@@ -70,18 +72,16 @@ export function componer(
 
   const generarQrBoleta = new GenerarQrBoleta({
     boletasGateway,
-    obtenerEstadoAcceso,
+    accesosGateway,
     qrSigner: qrCrypto,
     qrImageGenerator,
   });
 
   const validarIngreso = new ValidarIngreso({
-    accesoRepo,
-    reventaRepo,
+    accesosGateway,
     boletasGateway,
     qrVerifier: qrCrypto,
     clock,
-    generarId: randomUUID,
   });
 
   return crearServidor({

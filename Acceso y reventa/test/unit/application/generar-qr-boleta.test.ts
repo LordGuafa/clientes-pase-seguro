@@ -32,7 +32,7 @@ function build() {
   const obtenerEstadoAcceso = new ObtenerEstadoAcceso({ accesoRepo, reventaRepo });
   const sut = new GenerarQrBoleta({
     boletasGateway,
-    obtenerEstadoAcceso,
+    accesosGateway: { obtenerEstado: codigo => obtenerEstadoAcceso.ejecutar(codigo) },
     qrSigner: qrCrypto,
     qrImageGenerator,
   });

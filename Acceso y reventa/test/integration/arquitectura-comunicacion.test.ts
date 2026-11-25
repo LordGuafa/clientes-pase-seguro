@@ -6,6 +6,9 @@ import { crearServidor } from "../../src/adapters/in/http/server.ts";
 import { QrVerifierHmac } from "../../src/adapters/out/crypto/qr-verifier.hmac.ts";
 import { QuickChartQrClient } from "../../src/adapters/out/external-qr/quickchart-qr.client.ts";
 import { BoletasGatewayHttp } from "../../src/adapters/out/gateway-clients/boletas.gateway.http.ts";
+import { AccesosGatewayHttp } from "../../src/adapters/out/gateway-clients/accesos.gateway.http.ts";
+import { RegistrarAcceso } from "../../src/application/use-cases/registrar-acceso.ts";
+import { ListarAccesos } from "../../src/application/use-cases/listar-accesos.ts";
 import { GatewayHttpClient } from "../../src/adapters/out/gateway-clients/http-client.ts";
 import { TokenProvider } from "../../src/adapters/out/gateway-clients/token-provider.ts";
 import { GenerarQrBoleta } from "../../src/application/use-cases/generar-qr-boleta.ts";
@@ -54,6 +57,8 @@ describe("Integración de arquitectura completa (Gateway + EstadoAcceso A-HU2 + 
     let tokenCalls = 0;
     let qrCalls = 0;
     let qrAvailable = true;
+    let crudDisponible = true;
+    const llamadasCrud: string[] = [];
 
     // 1. Gateway simulado del clúster (emite JWT y enruta a Eventos y boletas)
     const mockGateway = await startMockServer((req, res) => {
@@ -92,6 +97,13 @@ describe("Integración de arquitectura completa (Gateway + EstadoAcceso A-HU2 + 
             precioBase: 25000,
           }),
         );
+        return;
+      }
+      if (req.url?.endsWith('/estado-acceso') || req.url?.startsWith('/accesos?') || req.url === '/accesos') {
+        llamadasCrud.push(`${req.method} ${req.url.split('?')[0]}`);
+        if (!crudDisponible) { res.writeHead(503).end(); return; }
+        req.headers['x-gateway-secret'] = GW_SECRET;
+        app(req, res);
         return;
       }
       res.statusCode = 404;
@@ -142,6 +154,7 @@ describe("Integración de arquitectura completa (Gateway + EstadoAcceso A-HU2 + 
       sleep: async () => {},
     });
     const boletasGateway = new BoletasGatewayHttp(gatewayHttp);
+    const accesosGateway = new AccesosGatewayHttp(gatewayHttp);
     const qrCrypto = new QrVerifierHmac(QR_SECRET);
     const qrImageClient = new QuickChartQrClient({
       baseUrl: `${mockQuickChart.baseUrl}/qr`,
@@ -154,21 +167,21 @@ describe("Integración de arquitectura completa (Gateway + EstadoAcceso A-HU2 + 
     const obtenerEstadoAcceso = new ObtenerEstadoAcceso({ accesoRepo, reventaRepo });
     const generarQrBoleta = new GenerarQrBoleta({
       boletasGateway,
-      obtenerEstadoAcceso,
+      accesosGateway,
       qrSigner: qrCrypto,
       qrImageGenerator: qrImageClient,
     });
     const validarIngreso = new ValidarIngreso({
-      accesoRepo,
-      reventaRepo,
+      accesosGateway,
       boletasGateway,
       qrVerifier: qrCrypto,
       clock: fixedClock(new Date("2026-11-24T18:30:00-05:00")),
-      generarId: sequentialIds("acc"),
     });
 
     const fakeDb = { command: async () => ({ ok: 1 }) } as unknown as Db;
     const app = crearServidor({
+      registrarAcceso: new RegistrarAcceso({ accesoRepo, clock: fixedClock(new Date("2026-11-24T18:30:00-05:00")), generarId: sequentialIds("crud") }),
+      listarAccesos: new ListarAccesos(accesoRepo),
       listarReventas: new ListarReventas({ listar: async () => [] }),
       db: fakeDb,
       validarIngreso,
@@ -220,6 +233,7 @@ describe("Integración de arquitectura completa (Gateway + EstadoAcceso A-HU2 + 
       });
     expect(ingresoOk.status).toBe(200);
     expect(ingresoOk.body.resultado).toBe("aceptado");
+    expect(ingresoOk.body.accesoId).toBe(accesoRepo.items[0].id);
 
     // Token OAuth2 se pidió una sola vez y se reutilizó entre GenerarQrBoleta y ValidarIngreso
     expect(tokenCalls).toBe(1);
@@ -247,6 +261,8 @@ describe("Integración de arquitectura completa (Gateway + EstadoAcceso A-HU2 + 
       });
     expect(segundoIngreso.status).toBe(409);
     expect(segundoIngreso.body.codigo).toBe("boleta_ya_usada");
+    expect(segundoIngreso.body.detalle.primerIngreso).toEqual({ puerta: "Sala-3", registradoEn: ingresoOk.body.registradoEn });
+    expect(llamadasCrud).toEqual(expect.arrayContaining([`GET /boletas/${BOLETA_1}/estado-acceso`, 'GET /accesos', 'POST /accesos']));
 
     const qrReusada = await request(app)
       .get(`/boletas/${BOLETA_1}/qr`)
@@ -274,6 +290,11 @@ describe("Integración de arquitectura completa (Gateway + EstadoAcceso A-HU2 + 
       });
     expect(ingresoConQrDegradado.status).toBe(200);
     expect(ingresoConQrDegradado.body.resultado).toBe("aceptado");
+    crudDisponible = false;
+    const intentos = accesoRepo.items.length;
+    await request(app).post('/accesos/validar').set('X-Gateway-Secret', GW_SECRET)
+      .send({ codigoQr: qrDegradado.body.codigoQr, puerta: 'Sala-1', eventoId: EVENTO_HOY }).expect(503);
+    expect(accesoRepo.items).toHaveLength(intentos);
   });
 });
 import { ListarReventas } from "../../src/application/use-cases/listar-reventas.ts";

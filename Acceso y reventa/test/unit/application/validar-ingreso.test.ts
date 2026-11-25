@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ValidarIngreso } from "../../../src/application/use-cases/validar-ingreso.ts";
+import { ObtenerEstadoAcceso } from "../../../src/application/use-cases/obtener-estado-acceso.ts";
 import { DomainError, ServicioNoDisponible } from "../../../src/domain/errors.ts";
 import { InMemoryAccesoRepository } from "../../fakes/in-memory-acceso-repository.ts";
 import { FakeReventaRepository } from "../../fakes/fake-reventa-repository.ts";
@@ -52,13 +53,19 @@ function build(opts?: {
   if (opts?.bloqueada) reventaRepo.blocked.add(BOLETA);
 
   const sut = new ValidarIngreso({
-    accesoRepo,
-    reventaRepo,
+    accesosGateway: {
+      obtenerEstado: codigo => new ObtenerEstadoAcceso({ accesoRepo, reventaRepo }).ejecutar(codigo),
+      primerIngreso: async codigo => (await accesoRepo.buscarAceptadoPorBoleta(codigo))!,
+      registrar: async intento => {
+        const acceso = { ...intento, id: generarId(), registradoEn: clock.ahora() };
+        await accesoRepo.guardar(acceso);
+        return acceso;
+      },
+    },
     boletasGateway,
     qrVerifier,
     clock,
-    generarId,
-  } as any);
+  });
 
   return { sut, accesoRepo, reventaRepo, boletasGateway, qrVerifier, clock };
 }

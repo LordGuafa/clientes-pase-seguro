@@ -1,10 +1,12 @@
 import type { Db } from "mongodb";
+import { colecciones } from "./colecciones.ts";
 
 export async function crearIndices(db: Db): Promise<void> {
+  const { accesos, reventas } = colecciones(db);
   // Índice compuesto { boletaCodigo: 1, resultado: 1 } cubre consultas por boletaCodigo
   // sin chocar en clave con el índice único parcial uniq_acceso_aceptado_por_boleta.
-  await db.collection("accesos").createIndex({ boletaCodigo: 1, resultado: 1 });
-  await db.collection("accesos").createIndex(
+  await db.collection(accesos).createIndex({ boletaCodigo: 1, resultado: 1 });
+  await db.collection(accesos).createIndex(
     { boletaCodigo: 1 },
     {
       unique: true,
@@ -13,8 +15,8 @@ export async function crearIndices(db: Db): Promise<void> {
     },
   );
 
-  await db.collection("reventas").createIndex({ boletaCodigo: 1 });
+  await db.collection(reventas).createIndex({ boletaCodigo: 1 });
   await db
-    .collection("reventas")
+    .collection(reventas)
     .createIndex({ vendedorId: 1, registradaEn: -1 });
 }

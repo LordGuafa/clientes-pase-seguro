@@ -1,7 +1,6 @@
 import { DomainError, AccesoAceptadoDuplicado } from "../../domain/errors.ts";
 import { parseQr } from "../../domain/qr-codigo.ts";
-import type { AccesoRepository } from "../ports/out/acceso-repository.ts";
-import type { ReventaRepository } from "../ports/out/reventas-repository.ts";
+import type { AccesosGateway } from "../ports/out/accesos-gateway.ts";
 import type { BoletasGateway } from "../ports/out/boletas-gateway.ts";
 import type { QrVerifier } from "../ports/out/qr-verifier.ts";
 
@@ -20,12 +19,10 @@ export interface ValidarIngresoOutput {
 }
 
 interface Deps {
-  accesoRepo: AccesoRepository;
-  reventaRepo: ReventaRepository;
+  accesosGateway: AccesosGateway;
   boletasGateway: BoletasGateway;
   qrVerifier: QrVerifier;
   clock: { ahora(): Date };
-  generarId: () => string;
 }
 
 // Fecha calendario en hora de Bogotá, para comparar "en su día"
@@ -94,11 +91,11 @@ export class ValidarIngreso {
     }
 
     // 4. ¿Ya ingresó?
-    const previo = await this.d.accesoRepo.buscarAceptadoPorBoleta(codigo);
-    if (previo) return this.rechazarPorUsada(input, codigo, previo);
+    const estado = await this.d.accesosGateway.obtenerEstado(codigo);
+    if (estado.ingreso) return this.rechazarPorUsada(input, codigo);
 
     // 5. ¿Bloqueada por reventa sospechosa?
-    if (await this.d.reventaRepo.existeSospechosaPorBoleta(codigo)) {
+    if (estado.bloqueada) {
       return this.rechazar(
         input,
         codigo,
@@ -108,46 +105,38 @@ export class ValidarIngreso {
     }
 
     // 6. Registrar el ingreso. El índice único cierra la carrera entre dos escaneos simultáneos.
-    const acceso = {
-      id: this.d.generarId(),
+    const intento = {
       boletaCodigo: codigo,
       eventoId: input.eventoId,
       puerta: input.puerta,
       resultado: "aceptado" as const,
       motivo: null,
-      registradoEn: this.d.clock.ahora(),
     };
     try {
-      await this.d.accesoRepo.guardar(acceso);
+      const acceso = await this.d.accesosGateway.registrar(intento);
+      return { accesoId: acceso.id, boletaCodigo: codigo, eventoId: acceso.eventoId,
+        puerta: acceso.puerta, registradoEn: acceso.registradoEn };
     } catch (e) {
       if (e instanceof AccesoAceptadoDuplicado) {
-        const primero = await this.d.accesoRepo.buscarAceptadoPorBoleta(codigo);
-        return this.rechazarPorUsada(input, codigo, primero);
+        return this.rechazarPorUsada(input, codigo);
       }
       throw e;
     }
 
-    return {
-      accesoId: acceso.id,
-      boletaCodigo: codigo,
-      eventoId: acceso.eventoId,
-      puerta: acceso.puerta,
-      registradoEn: acceso.registradoEn,
-    };
   }
 
-  private rechazarPorUsada(
+  private async rechazarPorUsada(
     input: ValidarIngresoInput,
     codigo: string,
-    primero: { puerta: string; registradoEn: Date } | null,
   ): Promise<never> {
+    const primero = await this.d.accesosGateway.primerIngreso(codigo);
     return this.rechazar(
       input,
       codigo,
       "boleta_ya_usada",
       "La boleta ya fue usada",
       {
-        primerIngreso: primero && {
+        primerIngreso: {
           puerta: primero.puerta,
           registradoEn: primero.registradoEn.toISOString(),
         },
@@ -164,14 +153,12 @@ export class ValidarIngreso {
     detalle: Record<string, unknown> = {},
   ): Promise<never> {
     try {
-      await this.d.accesoRepo.guardar({
-        id: this.d.generarId(),
+      await this.d.accesosGateway.registrar({
         boletaCodigo,
         eventoId: input.eventoId,
         puerta: input.puerta,
         resultado: "rechazado",
         motivo: codigo,
-        registradoEn: this.d.clock.ahora(),
       });
     } catch (e) {
       console.error("No se pudo registrar el rechazo:", e);
