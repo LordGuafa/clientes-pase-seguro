@@ -9,8 +9,8 @@ class RepositorioEventos:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def obtener(self, id_evento: str) -> Evento | None:
-        return self.db.get(Evento, id_evento)
+    def obtener(self, id_evento: str, *, bloquear: bool = False) -> Evento | None:
+        return self.db.get(Evento, id_evento, with_for_update=bloquear)
 
     def listar(
         self,

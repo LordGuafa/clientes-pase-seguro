@@ -1,6 +1,7 @@
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -18,7 +19,8 @@ engine = create_engine(
     if settings.url_base_datos.startswith("sqlite")
     else {},
     poolclass=StaticPool
-    if settings.url_base_datos.startswith("sqlite")
+    if make_url(settings.url_base_datos).database in ("", ":memory:", None)
+    and settings.url_base_datos.startswith("sqlite")
     else None,
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)

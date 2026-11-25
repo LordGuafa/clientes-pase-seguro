@@ -57,8 +57,8 @@ class ServicioEventos:
         self.db.refresh(evento)
         return evento
 
-    def obtener(self, id_evento: str) -> Evento:
-        evento = self.eventos.obtener(id_evento)
+    def obtener(self, id_evento: str, *, bloquear: bool = False) -> Evento:
+        evento = self.eventos.obtener(id_evento, bloquear=bloquear)
         if evento is None:
             raise DomainError(
                 "evento_inexistente",
@@ -78,7 +78,7 @@ class ServicioEventos:
         return self.eventos.listar(estado, desde, hasta, limite, desplazamiento)
 
     def actualizar(self, id_evento: str, datos: ActualizarEvento) -> Evento:
-        evento = self.obtener(id_evento)
+        evento = self.obtener(id_evento, bloquear=True)
         cambios = datos.model_dump(exclude_unset=True)
 
         if "fecha_hora" in cambios:
@@ -104,7 +104,7 @@ class ServicioEventos:
         return evento
 
     def eliminar(self, id_evento: str) -> None:
-        evento = self.obtener(id_evento)
+        evento = self.obtener(id_evento, bloquear=True)
         if self.eventos.tiene_boletas_vendidas(id_evento):
             raise DomainError(
                 "evento_con_boletas_vendidas",

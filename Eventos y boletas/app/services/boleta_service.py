@@ -13,8 +13,8 @@ class ServicioBoletas:
         self.boletas = RepositorioBoletas(db)
         self.db = db
 
-    def obtener(self, codigo: UUID) -> Boleta:
-        boleta = self.boletas.obtener(codigo)
+    def obtener(self, codigo: UUID, *, bloquear: bool = False) -> Boleta:
+        boleta = self.boletas.obtener(codigo, bloquear=bloquear)
         if boleta is None:
             raise DomainError(
                 "boleta_inexistente",
@@ -44,7 +44,13 @@ class ServicioBoletas:
         codigo: UUID,
         datos: ActualizarPropietarioBoleta,
     ) -> Boleta:
-        boleta = self.obtener(codigo)
+        boleta = self.obtener(codigo, bloquear=True)
+        if boleta.estado == EstadoBoleta.RESERVADA:
+            raise DomainError(
+                "boleta_reservada",
+                "No se puede cambiar el propietario de una boleta reservada",
+                status_code=409,
+            )
         if boleta.estado == EstadoBoleta.USADA:
             raise DomainError(
                 "boleta_ya_usada",

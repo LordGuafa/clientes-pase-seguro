@@ -1,0 +1,515 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MID Compras",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/compras/reservar": {
+      "post": {
+        "summary": "Crear Reserva",
+        "description": "Reserva inventario local y consulta el estado de acceso por el gateway. Ticketmaster Discovery enriquece los eventos vinculados con caché de 5 minutos. Si Discovery falla, se devuelve metadata cacheada o ticketmaster nulo.",
+        "operationId": "crear_reserva_compras_reservar_post",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitudReserva"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RespuestaReserva"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "solicitud_invalida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCompra"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "sin_cabecera_gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCompra"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "evento_inexistente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCompra"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "evento_no_disponible, limite_excedido o sin_boletas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCompra"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "servicio_no_disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCompra"
+                }
+              }
+            }
+          }
+        },
+        "x-outbound-scopes": [
+          "accesos:leer"
+        ],
+        "security": [
+          {
+            "GatewaySecret": []
+          }
+        ]
+      }
+    },
+    "/compras/{id}/confirmar": {
+      "post": {
+        "summary": "Confirmar Reserva",
+        "description": "Registra la referencia de pago y emite QR firmados. La confirmación es idempotente.",
+        "operationId": "confirmar_reserva_compras__id__confirmar_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SolicitudConfirmacion"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RespuestaConfirmacion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "solicitud_invalida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCompra"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "sin_cabecera_gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCompra"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "compra_inexistente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCompra"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "reserva_vencida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorCompra"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "GatewaySecret": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BoletaConfirmada": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Codigo"
+          },
+          "codigoQr": {
+            "type": "string",
+            "title": "Codigoqr"
+          },
+          "estado": {
+            "type": "string",
+            "title": "Estado",
+            "default": "vendida"
+          }
+        },
+        "type": "object",
+        "required": [
+          "codigo",
+          "codigoQr"
+        ],
+        "title": "BoletaConfirmada"
+      },
+      "BoletaReservada": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Codigo"
+          },
+          "estado": {
+            "type": "string",
+            "title": "Estado",
+            "default": "reservada"
+          }
+        },
+        "type": "object",
+        "required": [
+          "codigo"
+        ],
+        "title": "BoletaReservada"
+      },
+      "ErrorCompra": {
+        "properties": {
+          "codigo": {
+            "type": "string",
+            "title": "Codigo"
+          },
+          "mensaje": {
+            "type": "string",
+            "title": "Mensaje"
+          },
+          "detalle": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Detalle"
+          }
+        },
+        "type": "object",
+        "required": [
+          "codigo",
+          "mensaje",
+          "detalle"
+        ],
+        "title": "ErrorCompra"
+      },
+      "EventoExterno": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "nombre": {
+            "type": "string",
+            "title": "Nombre"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "desactualizado": {
+            "type": "boolean",
+            "title": "Desactualizado",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "nombre",
+          "url"
+        ],
+        "title": "EventoExterno"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "RespuestaConfirmacion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "eventoId": {
+            "type": "string",
+            "title": "Eventoid"
+          },
+          "compradorId": {
+            "type": "string",
+            "title": "Compradorid"
+          },
+          "estado": {
+            "type": "string",
+            "title": "Estado",
+            "default": "confirmada"
+          },
+          "referenciaPago": {
+            "type": "string",
+            "title": "Referenciapago"
+          },
+          "boletas": {
+            "items": {
+              "$ref": "#/components/schemas/BoletaConfirmada"
+            },
+            "type": "array",
+            "title": "Boletas"
+          },
+          "total": {
+            "type": "number",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "eventoId",
+          "compradorId",
+          "referenciaPago",
+          "boletas",
+          "total"
+        ],
+        "title": "RespuestaConfirmacion"
+      },
+      "RespuestaReserva": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "eventoId": {
+            "type": "string",
+            "title": "Eventoid"
+          },
+          "compradorId": {
+            "type": "string",
+            "title": "Compradorid"
+          },
+          "estado": {
+            "type": "string",
+            "title": "Estado",
+            "default": "pendiente"
+          },
+          "boletas": {
+            "items": {
+              "$ref": "#/components/schemas/BoletaReservada"
+            },
+            "type": "array",
+            "title": "Boletas"
+          },
+          "total": {
+            "type": "number",
+            "title": "Total"
+          },
+          "venceEn": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Venceen"
+          },
+          "ticketmaster": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventoExterno"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "eventoId",
+          "compradorId",
+          "boletas",
+          "total",
+          "venceEn",
+          "ticketmaster"
+        ],
+        "title": "RespuestaReserva"
+      },
+      "SolicitudConfirmacion": {
+        "properties": {
+          "referenciaPago": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Referenciapago"
+          }
+        },
+        "type": "object",
+        "required": [
+          "referenciaPago"
+        ],
+        "title": "SolicitudConfirmacion"
+      },
+      "SolicitudReserva": {
+        "properties": {
+          "eventoId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Eventoid"
+          },
+          "compradorId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Compradorid"
+          },
+          "cantidad": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Cantidad"
+          }
+        },
+        "type": "object",
+        "required": [
+          "eventoId",
+          "compradorId",
+          "cantidad"
+        ],
+        "title": "SolicitudReserva"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "GatewaySecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Gateway-Secret"
+      }
+    }
+  }
+}

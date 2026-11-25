@@ -10,8 +10,8 @@ class RepositorioBoletas:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def obtener(self, codigo: UUID) -> Boleta | None:
-        return self.db.get(Boleta, codigo)
+    def obtener(self, codigo: UUID, *, bloquear: bool = False) -> Boleta | None:
+        return self.db.get(Boleta, codigo, with_for_update=bloquear)
 
     def listar(
         self,

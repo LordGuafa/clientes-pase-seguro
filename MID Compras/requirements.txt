@@ -1,0 +1,2 @@
+-e ../Eventos y boletas
+httpx>=0.28,<1
