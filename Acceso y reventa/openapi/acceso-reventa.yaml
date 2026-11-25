@@ -16,6 +16,8 @@ servers:
 tags:
   - name: Sistema
     description: Operaciones de verificación de salud
+  - name: Registro de Accesos
+    description: Registro y consulta de intentos de ingreso (CRUD - A-HU1)
   - name: Boletas - Estado de Acceso
     description: Consulta de estado de acceso y transferencias (CRUD - A-HU2)
   - name: Validación de Acceso
@@ -23,6 +25,8 @@ tags:
   - name: Emisión Visual QR (API de Tercero)
     description: Generación de imagen QR mediante QuickChart API con plan de degradación (MID)
 paths:
+  /accesos:
+    $ref: './crud-accesos-reventas.yaml#/paths/~1accesos'
   /reventas:
     $ref: './crud-accesos-reventas.yaml#/paths/~1reventas'
   /health:

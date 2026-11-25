@@ -186,6 +186,7 @@ components:
           tokenUrl: https://gateway-pase-seguro.ejemplo.com/token
           scopes:
             accesos:leer: Consultar estado de acceso de boletas
+            accesos:escribir: Registrar intentos de ingreso (A-HU1)
             boletas:leer: Consultar boletas y eventos en Eventos y boletas
             boletas:escribir: Actualizar propietario de boleta en transferencias
   schemas:

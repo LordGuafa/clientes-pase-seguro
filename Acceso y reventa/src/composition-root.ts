@@ -6,6 +6,8 @@ import { ValidarIngreso } from "./application/use-cases/validar-ingreso.ts";
 import { ListarReventas } from "./application/use-cases/listar-reventas.ts";
 import { ObtenerEstadoAcceso } from "./application/use-cases/obtener-estado-acceso.ts";
 import { GenerarQrBoleta } from "./application/use-cases/generar-qr-boleta.ts";
+import { RegistrarAcceso } from "./application/use-cases/registrar-acceso.ts";
+import { ListarAccesos } from "./application/use-cases/listar-accesos.ts";
 import { QrVerifierHmac } from "./adapters/out/crypto/qr-verifier.hmac.ts";
 import { TokenProvider } from "./adapters/out/gateway-clients/token-provider.ts";
 import { GatewayHttpClient } from "./adapters/out/gateway-clients/http-client.ts";
@@ -59,6 +61,8 @@ export function componer(
     cacheMaxItems: cfg.qrCacheMaxItems ?? 500,
   });
 
+  const clock = { ahora: () => new Date() };
+
   const obtenerEstadoAcceso = new ObtenerEstadoAcceso({
     accesoRepo,
     reventaRepo,
@@ -76,7 +80,7 @@ export function componer(
     reventaRepo,
     boletasGateway,
     qrVerifier: qrCrypto,
-    clock: { ahora: () => new Date() },
+    clock,
     generarId: randomUUID,
   });
 
@@ -84,6 +88,8 @@ export function componer(
     listarReventas: new ListarReventas(reventaRepo),
     db,
     validarIngreso,
+    registrarAcceso: new RegistrarAcceso({ accesoRepo, clock, generarId: randomUUID }),
+    listarAccesos: new ListarAccesos(accesoRepo),
     obtenerEstadoAcceso,
     generarQrBoleta,
     gatewaySecret: cfg.gatewaySecret,

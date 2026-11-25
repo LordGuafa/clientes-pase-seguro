@@ -16,6 +16,8 @@ servers:
 tags:
   - name: Sistema
     description: Verificación de salud y disponibilidad del servicio
+  - name: Registro de Accesos
+    description: Registro y consulta de intentos de ingreso aceptados o rechazados (A-HU1)
   - name: Boletas - Estado de Acceso
     description: Consulta de historial de ingreso, transferencias y bloqueo (A-HU2)
 paths:
@@ -49,6 +51,82 @@ paths:
         '403': { $ref: '#/components/responses/SinPermiso' }
         '500':
           description: Error interno al consultar el historial.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /accesos:
+    post:
+      operationId: registrarAcceso
+      summary: Registrar un intento de ingreso (A-HU1)
+      description: Guarda un intento de ingreso aceptado o rechazado con puerta y motivo. La hora (registradoEn) la asigna el servidor. Si el resultado es rechazado, el motivo es obligatorio; si es aceptado, se guarda en null.
+      tags: [Registro de Accesos]
+      security:
+        - clientCredentials: [accesos:escribir]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NuevoAcceso' }
+            examples:
+              rechazado:
+                value: { boletaCodigo: c87979ee-e717-4631-94ca-e1007f728c77, eventoId: evt-1, puerta: A, resultado: rechazado, motivo: qr_invalido }
+              aceptado:
+                value: { boletaCodigo: c87979ee-e717-4631-94ca-e1007f728c77, eventoId: evt-1, puerta: B, resultado: aceptado }
+      responses:
+        '201':
+          description: Intento registrado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Acceso' }
+        '400':
+          description: Cuerpo inválido o rechazo sin motivo (solicitud_invalida).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          description: La boleta ya tiene un acceso aceptado (acceso_duplicado).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Error interno al registrar el intento.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    get:
+      operationId: listarAccesos
+      summary: Consultar el registro de intentos de ingreso (A-HU1)
+      description: Los filtros se combinan por igualdad (AND). Se ordena del más reciente al más antiguo. Los parámetros desconocidos se rechazan.
+      tags: [Registro de Accesos]
+      security:
+        - clientCredentials: [accesos:leer]
+      parameters:
+        - { in: query, name: eventoId, schema: { type: string, minLength: 1 } }
+        - { in: query, name: boletaCodigo, schema: { type: string, minLength: 1 } }
+        - { in: query, name: resultado, schema: { type: string, enum: [aceptado, rechazado] } }
+        - { in: query, name: pagina, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: tamano, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Página de intentos que coinciden.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaginaAccesos' }
+        '400':
+          description: Filtros o paginación inválidos (solicitud_invalida).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '500':
+          description: Error interno al consultar el registro.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -130,7 +208,8 @@ components:
         clientCredentials:
           tokenUrl: https://gateway-pase-seguro.ejemplo.com/token
           scopes:
-            accesos:leer: Consultar el estado de acceso, transferencias y bloqueo de una boleta
+            accesos:leer: Consultar el estado de acceso, transferencias y bloqueo de una boleta, y el registro de intentos de ingreso
+            accesos:escribir: Registrar intentos de ingreso (A-HU1)
   schemas:
     Reventa:
       type: object
@@ -185,6 +264,41 @@ components:
           type: boolean
           description: "`true` si la boleta presenta alguna reventa con `marcaSospechosa: true`"
           example: false
+    NuevoAcceso:
+      type: object
+      additionalProperties: false
+      required: [boletaCodigo, eventoId, puerta, resultado]
+      properties:
+        boletaCodigo: { type: string, minLength: 1, maxLength: 100 }
+        eventoId: { type: string, minLength: 1, maxLength: 100 }
+        puerta: { type: string, minLength: 1, maxLength: 20 }
+        resultado: { type: string, enum: [aceptado, rechazado] }
+        motivo:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: Obligatorio cuando resultado es rechazado.
+    Acceso:
+      type: object
+      required: [id, boletaCodigo, eventoId, puerta, resultado, motivo, registradoEn]
+      properties:
+        id: { type: string }
+        boletaCodigo: { type: string }
+        eventoId: { type: string }
+        puerta: { type: string }
+        resultado: { type: string, enum: [aceptado, rechazado] }
+        motivo: { type: string, nullable: true }
+        registradoEn: { type: string, format: date-time }
+    PaginaAccesos:
+      type: object
+      required: [items, total, pagina, tamano]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Acceso' }
+        total: { type: integer }
+        pagina: { type: integer }
+        tamano: { type: integer }
     Error:
       type: object
       required: [codigo, mensaje]

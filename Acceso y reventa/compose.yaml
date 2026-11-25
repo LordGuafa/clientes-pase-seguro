@@ -1,0 +1,33 @@
+# Entorno local: MongoDB + servicio Acceso y reventa
+# Uso: docker compose up --build
+services:
+  mongo:
+    image: mongo:7
+    container_name: acceso-reventa-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - datos_mongo:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  acceso-reventa:
+    build: .
+    container_name: acceso-reventa-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Dentro de la red de compose, Mongo se llama "mongo", no "localhost"
+      MONGODB_URI: mongodb://mongo:27017/acceso_reventa
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  datos_mongo:
